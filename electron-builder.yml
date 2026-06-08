@@ -1,0 +1,36 @@
+appId: com.fishundersea.wintunerpro
+productName: WinTuner Pro
+copyright: Copyright © 2026 Fish-under-sea
+
+directories:
+  output: release
+  buildResources: build
+
+# 仅打包编译产物与运行所需文件；离线大资源（resources/）默认不入包，后续按需外挂
+files:
+  - out/**
+  - package.json
+
+# PowerShell 脚本随包分发，运行态由主进程按 process.resourcesPath/scripts 定位调用
+extraResources:
+  - from: scripts
+    to: scripts
+# 离线大资源（resources/）默认不入包，功能落地后再决定是否外挂或 extraResources
+# extraResources 追加示例：
+#   - from: resources
+#     to: resources
+
+win:
+  target:
+    - nsis
+  # 关键：应用以管理员权限运行（启动弹 UAC），承载系统级 PowerShell 调度
+  requestedExecutionLevel: requireAdministrator
+  # 图标占位，设计代理补齐 build/icon.ico 后启用
+  # icon: build/icon.ico
+
+nsis:
+  oneClick: false
+  perMachine: true
+  allowToChangeInstallationDirectory: true
+  # installerIcon: build/icon.ico
+  # uninstallerIcon: build/icon.ico
