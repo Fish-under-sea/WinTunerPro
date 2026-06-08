@@ -1,6 +1,15 @@
-import type { OemDetectResult, OemBrand, ChassisInfo } from '@shared/types/oem'
+import type {
+  OemDetectResult,
+  OemBrand,
+  ChassisInfo,
+  OemApplyResult,
+  OemPerformanceMode,
+  OemFallbackMatchDetail,
+} from '@shared/types/oem'
 import { OEM_BRAND_DISPLAY_NAMES, PERFORMANCE_MODE_BRANDS } from '@shared/types/oem'
-import { runPowerShell } from './powershellRunner'
+import { runPowerShell, asArray } from './powershellRunner'
+import { matchExistingPowerPlanForMode, setPowerPlan } from './powerService'
+import { resolveFallbackModeFromOem } from '@shared/utils/powerPlanMatcher'
 
 /**
  * oem 模块业务服务（产品核心分流：是否走品牌专属性能模式）。
@@ -21,6 +30,23 @@ interface RawChassisBrand {
   chassisTypeName?: unknown
   hasBattery?: unknown
   isLaptop?: unknown
+}
+
+interface RawOemApplyResult {
+  success?: unknown
+  brand?: unknown
+  mode?: unknown
+  appliedBrandMode?: unknown
+  usedBrandMode?: unknown
+  fallbackUsed?: unknown
+  message?: unknown
+  warnings?: unknown
+  details?: unknown
+}
+
+function dedupeWarnings(warnings: string[]): string[] {
+  const unique = Array.from(new Set(warnings.map((w) => String(w).trim()).filter(Boolean)))
+  return unique.slice(0, 2)
 }
 
 /**
@@ -78,5 +104,105 @@ export async function detectOem(): Promise<OemDetectResult> {
     brandDisplayName: OEM_BRAND_DISPLAY_NAMES[brand],
     supportsPerformanceMode,
     fallbackNote,
+  }
+}
+
+const OEM_MODE_WHITELIST: readonly OemPerformanceMode[] = ['quiet', 'balanced', 'performance', 'beast']
+
+/** 应用 OEM 性能模式（品牌调度失败时自动走电源兜底） */
+export async function applyOemMode(mode: OemPerformanceMode): Promise<OemApplyResult> {
+  if (!OEM_MODE_WHITELIST.includes(mode)) {
+    throw new Error(`不支持的 OEM 性能模式：${mode}`)
+  }
+
+  const detect = await detectOem()
+  const warnings: string[] = []
+  const targetMode = resolveFallbackModeFromOem(mode)
+
+  const applyPowerFallback = async (): Promise<OemFallbackMatchDetail> => {
+    const match = await matchExistingPowerPlanForMode(targetMode)
+    await setPowerPlan(match.selectedPlan.guid)
+    if (match.warning) warnings.push(match.warning)
+    return {
+      targetMode,
+      selectedPlanGuid: match.selectedPlan.guid,
+      selectedPlanName: match.selectedPlan.name,
+      score: match.score,
+      confidence: match.confidence,
+      matchedKeywords: match.matchedKeywords,
+      reason: match.reason,
+      warning: match.warning,
+    }
+  }
+
+  if (!detect.supportsPerformanceMode) {
+    const fallbackMatch = await applyPowerFallback()
+    return {
+      success: true,
+      brand: detect.brand,
+      mode,
+      usedBrandMode: false,
+      usedPowerFallback: true,
+      fallbackPlanName: fallbackMatch.selectedPlanName,
+      fallbackTargetMode: targetMode,
+      fallbackMatch,
+      message: detect.fallbackNote || '当前品牌不支持专属调度，已切换电源计划兜底',
+      warnings: dedupeWarnings(warnings),
+    }
+  }
+
+  const scriptResult = await runPowerShell<RawOemApplyResult>('oem/Set-OemPerformanceMode.ps1', [
+    '-Brand',
+    detect.brand,
+    '-Mode',
+    mode,
+  ])
+
+  warnings.push(...dedupeWarnings(asArray<string>(scriptResult.warnings).map((w) => String(w))))
+
+  const appliedBrandMode =
+    scriptResult.appliedBrandMode !== undefined
+      ? Boolean(scriptResult.appliedBrandMode)
+      : Boolean(scriptResult.usedBrandMode)
+  const usedBrandMode = appliedBrandMode
+  const fallbackUsedHint = Boolean(scriptResult.fallbackUsed)
+  const details =
+    scriptResult.details && typeof scriptResult.details === 'object'
+      ? (scriptResult.details as Record<string, unknown>)
+      : undefined
+
+  if (usedBrandMode && Boolean(scriptResult.success)) {
+    return {
+      success: true,
+      brand: detect.brand,
+      mode,
+      appliedBrandMode: true,
+      usedBrandMode: true,
+      fallbackUsed: false,
+      usedPowerFallback: false,
+      message: String(scriptResult.message ?? '品牌性能模式已应用'),
+      warnings: dedupeWarnings(warnings),
+      details,
+    }
+  }
+
+  // 品牌脚本未命中/失败时，不新建电源计划，仅在现有计划中智能匹配兜底。
+  const fallbackMatch = await applyPowerFallback()
+  warnings.push('品牌专属接口不可用，已自动切换为电源计划兜底')
+
+  return {
+    success: true,
+    brand: detect.brand,
+    mode,
+    appliedBrandMode: false,
+    usedBrandMode: false,
+    fallbackUsed: fallbackUsedHint || true,
+    usedPowerFallback: true,
+    fallbackPlanName: fallbackMatch.selectedPlanName,
+    fallbackTargetMode: targetMode,
+    fallbackMatch,
+    message: String(scriptResult.message ?? '品牌专属调度未生效，已启用电源兜底'),
+    warnings: dedupeWarnings(warnings),
+    details,
   }
 }

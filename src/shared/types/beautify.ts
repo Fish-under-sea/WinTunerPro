@@ -56,3 +56,15 @@ export interface BeautifyStatus {
   /** 当前已应用的风格包 id，未应用为 null */
   currentThemeId: string | null
 }
+
+/** Nexus 安装结果：安装成功后返回配置导入与告警信息，避免“安装成功被误判失败”。 */
+export interface NexusInstallResult {
+  /** 安装来源（当前固定为离线 exe） */
+  installedBy: 'offline-exe'
+  /** 是否成功导入了传入的配置 */
+  configImported: boolean
+  /** 导入前备份路径（键不存在或未导入时为空） */
+  backup?: string
+  /** 非致命告警（例如安装器非零退出但已验真安装成功） */
+  warnings?: string[]
+}

@@ -14,7 +14,7 @@ import {
 import { Icon } from '@renderer/components/icons'
 import type { IconName } from '@renderer/components/icons'
 import { cn } from '@renderer/lib/cn'
-import { toast } from '@renderer/store/toastStore'
+import type { OemPerformanceMode } from '@shared/types'
 
 /** 品牌性能模式选项（本期为可视化设计，下发动作后续接入品牌脚本） */
 interface PerfMode {
@@ -39,7 +39,7 @@ const PERF_MODES: PerfMode[] = [
 ]
 
 export function OemSchedulerPage(): React.JSX.Element {
-  const { data: oem, loading, error, loaded, load } = useOemStore()
+  const { data: oem, loading, error, loaded, load, lastApplyResult } = useOemStore()
 
   useEffect(() => {
     void load()
@@ -105,6 +105,32 @@ export function OemSchedulerPage(): React.JSX.Element {
             ) : (
               <PowerFallbackPanel note={oem.fallbackNote} />
             )}
+            {lastApplyResult && (
+              <Card className="border border-border !p-4">
+                <div className="flex items-center gap-2 text-sm font-semibold text-text">
+                  <Icon name={lastApplyResult.success ? 'checkCircle' : 'shieldAlert'} size={16} />
+                  执行结果：{lastApplyResult.message}
+                </div>
+                <p className="mt-1 text-xs text-text-muted">
+                  {lastApplyResult.usedBrandMode
+                    ? '已执行品牌专属模式'
+                    : lastApplyResult.usedPowerFallback
+                      ? `品牌调度未执行，已切换电源兜底：${lastApplyResult.fallbackPlanName ?? '性能方案'}`
+                      : '未生效'}
+                </p>
+                {lastApplyResult.fallbackMatch && (
+                  <p className="mt-1 text-xs text-text-muted">
+                    兜底目标模式：{lastApplyResult.fallbackMatch.targetMode}；实际命中：{lastApplyResult.fallbackMatch.selectedPlanName}；
+                    匹配依据：{lastApplyResult.fallbackMatch.matchedKeywords.join('、') || '无关键词命中（稳妥回退）'}。
+                  </p>
+                )}
+                {lastApplyResult.warnings.length > 0 && (
+                  <p className="mt-1 text-xs text-warning">
+                    原因：{lastApplyResult.warnings.join('；')}
+                  </p>
+                )}
+              </Card>
+            )}
           </div>
         )}
       </AsyncBoundary>
@@ -114,6 +140,7 @@ export function OemSchedulerPage(): React.JSX.Element {
 
 /** 主流品牌：性能模式 + MUX 直连引导 */
 function BrandPerformancePanel({ brandName }: { brandName: string }): React.JSX.Element {
+  const { applyMode, applying } = useOemStore()
   const [selected, setSelected] = useState('balanced')
   const [muxOpen, setMuxOpen] = useState(false)
 
@@ -127,7 +154,8 @@ function BrandPerformancePanel({ brandName }: { brandName: string }): React.JSX.
           <Button
             size="sm"
             leftIcon="check"
-            onClick={() => toast.info('性能模式下发将在后续版本上线', '当前为可视化设计阶段')}
+            loading={applying}
+            onClick={() => void applyMode(selected as OemPerformanceMode)}
           >
             应用所选模式
           </Button>

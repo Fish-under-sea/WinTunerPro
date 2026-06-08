@@ -2,6 +2,7 @@ import { registerAppHandlers } from './appHandlers'
 import { registerHardwareHandlers } from './hardwareHandlers'
 import { registerGpuHandlers } from './gpuHandlers'
 import { registerOemHandlers } from './oemHandlers'
+import { registerOptimizationHandlers } from './optimizationHandlers'
 import { registerPowerHandlers } from './powerHandlers'
 import { registerReinstallHandlers } from './reinstallHandlers'
 import { registerBeautifyHandlers } from './beautifyHandlers'
@@ -19,6 +20,7 @@ export function registerIpcHandlers(): void {
   registerHardwareHandlers()
   registerGpuHandlers()
   registerOemHandlers()
+  registerOptimizationHandlers()
   registerPowerHandlers()
   registerReinstallHandlers()
   registerBeautifyHandlers()
