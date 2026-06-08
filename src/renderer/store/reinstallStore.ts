@@ -1,11 +1,16 @@
 import { create } from 'zustand'
-import type { SystemImageSource, MachineIdInfo, IsoValidationResult } from '@shared/types'
+import type {
+  SystemImageSource,
+  MachineIdInfo,
+  IsoValidationResult,
+  ReinstallProgress,
+} from '@shared/types'
 import { errorMessage } from '@renderer/lib/async'
 import { toast } from './toastStore'
 
 /**
  * 系统重装 store：镜像来源列表（listSystemImageSources）+ 机器码（getMachineId）只读，
- * 自定义 ISO 导入校验（importIso，写操作）。
+ * 自定义 ISO 导入校验（importIso，写操作），以及部署进度（startDeploy，本期为演示流水线）。
  */
 interface ReinstallStore {
   sources: SystemImageSource[] | null
@@ -17,48 +22,76 @@ interface ReinstallStore {
   importing: boolean
   /** 最近一次 ISO 校验结果 */
   lastImport: IsoValidationResult | null
+  /** 是否正在部署（演示流水线进行中） */
+  deploying: boolean
+  /** 部署进度（null 表示尚未开始/已重置） */
+  deployProgress: ReinstallProgress | null
   load: (force?: boolean) => Promise<void>
   importIso: (path: string) => Promise<void>
+  startDeploy: (sourceId: string) => Promise<void>
+  resetDeploy: () => void
 }
 
-export const useReinstallStore = create<ReinstallStore>((set, get) => ({
-  sources: null,
-  machineId: null,
-  loading: false,
-  error: null,
-  loaded: false,
-  importing: false,
-  lastImport: null,
-  load: async (force = false) => {
-    const { loading, loaded } = get()
-    if (loading) return
-    if (loaded && !force) return
-    set({ loading: true, error: null })
-    try {
-      const [sources, machineId] = await Promise.all([
-        window.electronAPI.listSystemImageSources(),
-        window.electronAPI.getMachineId(),
-      ])
-      set({ sources, machineId, loading: false, loaded: true })
-    } catch (err) {
-      set({ error: errorMessage(err), loading: false })
-    }
-  },
-  importIso: async (path) => {
-    if (get().importing) return
-    set({ importing: true, lastImport: null })
-    try {
-      const result = await window.electronAPI.importIso(path)
-      set({ lastImport: result })
-      if (result.valid) {
-        toast.success('ISO 校验通过', result.bootableVersion)
-      } else {
-        toast.error('ISO 校验未通过', result.errorMessage)
+export const useReinstallStore = create<ReinstallStore>((set, get) => {
+  // store 创建时订阅一次部署进度推送（应用生命周期内常驻）
+  window.electronAPI.onReinstallProgress((p) => {
+    set({ deployProgress: p, deploying: !p.done })
+  })
+
+  return {
+    sources: null,
+    machineId: null,
+    loading: false,
+    error: null,
+    loaded: false,
+    importing: false,
+    lastImport: null,
+    deploying: false,
+    deployProgress: null,
+    load: async (force = false) => {
+      const { loading, loaded } = get()
+      if (loading) return
+      if (loaded && !force) return
+      set({ loading: true, error: null })
+      try {
+        const [sources, machineId] = await Promise.all([
+          window.electronAPI.listSystemImageSources(),
+          window.electronAPI.getMachineId(),
+        ])
+        set({ sources, machineId, loading: false, loaded: true })
+      } catch (err) {
+        set({ error: errorMessage(err), loading: false })
       }
-    } catch (err) {
-      toast.error('导入 ISO 失败', errorMessage(err))
-    } finally {
-      set({ importing: false })
-    }
-  },
-}))
+    },
+    importIso: async (path) => {
+      if (get().importing) return
+      set({ importing: true, lastImport: null })
+      try {
+        const result = await window.electronAPI.importIso(path)
+        set({ lastImport: result })
+        if (result.valid) {
+          toast.success('ISO 校验通过', result.bootableVersion)
+        } else {
+          toast.error('ISO 校验未通过', result.errorMessage)
+        }
+      } catch (err) {
+        toast.error('导入 ISO 失败', errorMessage(err))
+      } finally {
+        set({ importing: false })
+      }
+    },
+    startDeploy: async (sourceId) => {
+      if (get().deploying) return
+      // 进度由 onReinstallProgress 推送写入；这里仅置初始态并触发主进程流水线
+      set({ deploying: true, deployProgress: { percent: 0, stage: '正在启动部署流程' } })
+      try {
+        await window.electronAPI.startReinstallDeploy(sourceId)
+        // 本期为演示流水线，正常结束即收尾（进度终态由事件标注 done）
+      } catch (err) {
+        set({ deploying: false })
+        toast.error('启动部署失败', errorMessage(err))
+      }
+    },
+    resetDeploy: () => set({ deploying: false, deployProgress: null }),
+  }
+})

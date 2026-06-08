@@ -11,14 +11,13 @@ files:
   - out/**
   - package.json
 
-# PowerShell 脚本随包分发，运行态由主进程按 process.resourcesPath/scripts 定位调用
+# PowerShell 脚本与离线资源随包分发，运行态由主进程按 process.resourcesPath/{scripts,resources} 定位调用。
+# resources/ 携带离线安装包（如 themes/nexus/NexusSetup.exe）与风格包，保证无网络也可完整安装。
 extraResources:
   - from: scripts
     to: scripts
-# 离线大资源（resources/）默认不入包，功能落地后再决定是否外挂或 extraResources
-# extraResources 追加示例：
-#   - from: resources
-#     to: resources
+  - from: resources
+    to: resources
 
 win:
   target:

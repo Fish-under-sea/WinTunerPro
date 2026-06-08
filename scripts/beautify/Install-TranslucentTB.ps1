@@ -18,16 +18,19 @@ param(
 . (Join-Path $PSScriptRoot '_BeautifyCommon.ps1')
 
 try {
+  Write-WtProgress -Percent 5 -Stage '准备安装 TranslucentTB'
   $installedBy = ''
 
   if (-not [string]::IsNullOrWhiteSpace($InstallerPath) -and (Test-Path -LiteralPath $InstallerPath -PathType Leaf)) {
     $ext = [System.IO.Path]::GetExtension($InstallerPath).ToLower()
     if ($ext -in @('.msix', '.msixbundle', '.appx')) {
+      Write-WtProgress -Percent 20 -Stage '正在安装离线包'
       Add-AppxPackage -Path $InstallerPath -ErrorAction Stop
       $installedBy = 'offline-msix'
     }
     elseif ($ext -eq '.exe') {
       # 极少数便携/打包 exe，按静默约定执行
+      Write-WtProgress -Percent 20 -Stage '正在静默安装'
       $proc = Start-Process -FilePath $InstallerPath -ArgumentList '/S' -Wait -PassThru
       if ($proc.ExitCode -ne 0) { throw "TranslucentTB 安装器返回非零退出码：$($proc.ExitCode)" }
       $installedBy = 'offline-exe'
@@ -42,6 +45,7 @@ try {
       Write-WtResult -Ok $false -Code 'ERR_WINGET_MISSING' -Message '系统未提供 winget，无法兜底安装 TranslucentTB。请放置离线安装包到 resources/themes/translucenttb/。'
       exit 1
     }
+    Write-WtProgress -Percent 20 -Stage '通过 winget 联网安装'
     $args = @(
       'install', '--id', 'CharlesMilette.TranslucentTB', '-e', '--silent',
       '--accept-package-agreements', '--accept-source-agreements'
@@ -55,12 +59,16 @@ try {
     exit 1
   }
 
+  Write-WtProgress -Percent 75 -Stage '安装完成，处理配置'
+
   # 配置导入（可选）：有预置 settings.json 才执行
   $config = $null
   if (-not [string]::IsNullOrWhiteSpace($ConfigSource)) {
+    Write-WtProgress -Percent 90 -Stage '备份并导入预置配置'
     $config = Import-TtbConfigFile -ConfigSource $ConfigSource -BackupDir $BackupDir
   }
 
+  Write-WtProgress -Percent 100 -Stage 'TranslucentTB 安装完成'
   Write-WtResult -Ok $true -Data ([ordered]@{
       installedBy = $installedBy
       config      = $config

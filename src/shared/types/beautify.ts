@@ -30,6 +30,23 @@ export interface ThemePack {
   description: string
 }
 
+/**
+ * 安装进度事件（main→renderer 单向推送，`beautify:install-progress`）。
+ * 由安装脚本以 `WT_PROGRESS:{json}` 行输出，经 service 透传到渲染进程进度条。
+ */
+export interface InstallProgress {
+  /** 进度归属的工具 */
+  tool: 'translucenttb' | 'nexus'
+  /** 百分比 0–100 */
+  percent: number
+  /** 当前阶段文案（人话，直接展示） */
+  stage: string
+  /** 是否已结束（成功或失败的终态） */
+  done?: boolean
+  /** 失败时的错误信息（done=true 且失败时有值） */
+  error?: string
+}
+
 /** 美化整体状态（`beautify:get-status` 返回结构） */
 export interface BeautifyStatus {
   /** TranslucentTB（任务栏透明工具）状态 */

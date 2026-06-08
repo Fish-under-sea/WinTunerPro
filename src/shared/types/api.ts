@@ -3,8 +3,13 @@ import type { SystemInfo, DeviceInfo } from './hardware'
 import type { GpuDetectResult } from './gpu'
 import type { OemDetectResult } from './oem'
 import type { PowerState } from './power'
-import type { SystemImageSource, IsoValidationResult, MachineIdInfo } from './reinstall'
-import type { BeautifyStatus } from './beautify'
+import type {
+  SystemImageSource,
+  IsoValidationResult,
+  MachineIdInfo,
+  ReinstallProgress,
+} from './reinstall'
+import type { BeautifyStatus, InstallProgress } from './beautify'
 import type { WallpaperState, WallpaperEngineStatus } from './wallpaper'
 
 /**
@@ -51,6 +56,10 @@ export interface ElectronAPI {
   importIso: (path: string) => Promise<IsoValidationResult>
   /** 读取机器码（只读展示） */
   getMachineId: () => Promise<MachineIdInfo>
+  /** 触发系统部署（本期为演示流水线，不做真实落地）；进度经 onReinstallProgress 推送 */
+  startReinstallDeploy: (sourceId: string) => Promise<void>
+  /** 订阅部署进度事件，返回取消订阅函数 */
+  onReinstallProgress: (cb: (p: ReinstallProgress) => void) => () => void
 
   // ===== beautify：TranslucentTB / Nexus / 风格包 =====
   /** 读取美化工具与风格包状态 */
@@ -61,6 +70,8 @@ export interface ElectronAPI {
   installNexus: () => Promise<void>
   /** 应用风格包（写操作） */
   applyTheme: (themeId: string) => Promise<void>
+  /** 订阅安装进度事件（TranslucentTB / Nexus），返回取消订阅函数 */
+  onInstallProgress: (cb: (p: InstallProgress) => void) => () => void
 
   // ===== wallpaper：静态壁纸 + Wallpaper Engine 动态 =====
   /** 列出可用壁纸与当前壁纸 */

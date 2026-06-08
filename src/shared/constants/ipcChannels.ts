@@ -51,6 +51,10 @@ export const REINSTALL_CHANNELS = {
   IMPORT_ISO: 'reinstall:import-iso',
   /** 读取机器码（只读展示） */
   GET_MACHINE_ID: 'reinstall:get-machine-id',
+  /** 触发系统部署（invoke；本期为演示流水线，不做真实落地） */
+  DEPLOY: 'reinstall:deploy',
+  /** 部署进度事件（main→renderer 单向推送） */
+  DEPLOY_PROGRESS: 'reinstall:deploy-progress',
 } as const
 
 /** beautify 模块通道——TranslucentTB / Nexus / 风格包 */
@@ -63,6 +67,8 @@ export const BEAUTIFY_CHANNELS = {
   INSTALL_NEXUS: 'beautify:install-nexus',
   /** 应用风格包（写操作） */
   APPLY_THEME: 'beautify:apply-theme',
+  /** 安装进度事件（main→renderer 单向推送） */
+  INSTALL_PROGRESS: 'beautify:install-progress',
 } as const
 
 /** wallpaper 模块通道——静态壁纸 + Wallpaper Engine 动态 */
@@ -78,10 +84,19 @@ export const WALLPAPER_CHANNELS = {
 } as const
 
 /**
- * 所有通道名的联合类型，便于在主进程统一约束 handler 注册。
- * 后续新增模块常量后，在此并入即可获得类型收敛。
+ * main→renderer 单向推送（事件）通道名，不参与 invoke 的 handler 注册约束，
+ * 因此从下方的 IpcChannel 联合类型中排除。
  */
-export type IpcChannel =
+export type IpcEventChannel =
+  | typeof BEAUTIFY_CHANNELS.INSTALL_PROGRESS
+  | typeof REINSTALL_CHANNELS.DEPLOY_PROGRESS
+
+/**
+ * 所有 invoke 通道名的联合类型，便于在主进程统一约束 handler 注册。
+ * 后续新增模块常量后，在此并入即可获得类型收敛。
+ * 注意：单向推送的事件通道（见 IpcEventChannel）不计入此联合。
+ */
+export type IpcChannel = Exclude<
   | (typeof APP_CHANNELS)[keyof typeof APP_CHANNELS]
   | (typeof HARDWARE_CHANNELS)[keyof typeof HARDWARE_CHANNELS]
   | (typeof GPU_CHANNELS)[keyof typeof GPU_CHANNELS]
@@ -89,4 +104,6 @@ export type IpcChannel =
   | (typeof POWER_CHANNELS)[keyof typeof POWER_CHANNELS]
   | (typeof REINSTALL_CHANNELS)[keyof typeof REINSTALL_CHANNELS]
   | (typeof BEAUTIFY_CHANNELS)[keyof typeof BEAUTIFY_CHANNELS]
-  | (typeof WALLPAPER_CHANNELS)[keyof typeof WALLPAPER_CHANNELS]
+  | (typeof WALLPAPER_CHANNELS)[keyof typeof WALLPAPER_CHANNELS],
+  IpcEventChannel
+>

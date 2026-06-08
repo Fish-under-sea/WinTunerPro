@@ -10,6 +10,8 @@ import {
   WALLPAPER_CHANNELS,
 } from '@shared/constants/ipcChannels'
 import type { ElectronAPI } from '@shared/types/api'
+import type { InstallProgress } from '@shared/types/beautify'
+import type { ReinstallProgress } from '@shared/types/reinstall'
 
 /**
  * 预加载脚本——主进程与渲染进程之间的唯一桥梁。
@@ -39,12 +41,23 @@ const api: ElectronAPI = {
   listSystemImageSources: () => ipcRenderer.invoke(REINSTALL_CHANNELS.LIST_SOURCES),
   importIso: (path) => ipcRenderer.invoke(REINSTALL_CHANNELS.IMPORT_ISO, path),
   getMachineId: () => ipcRenderer.invoke(REINSTALL_CHANNELS.GET_MACHINE_ID),
+  startReinstallDeploy: (sourceId) => ipcRenderer.invoke(REINSTALL_CHANNELS.DEPLOY, sourceId),
+  onReinstallProgress: (cb) => {
+    const fn = (_e: unknown, p: ReinstallProgress): void => cb(p)
+    ipcRenderer.on(REINSTALL_CHANNELS.DEPLOY_PROGRESS, fn)
+    return () => ipcRenderer.removeListener(REINSTALL_CHANNELS.DEPLOY_PROGRESS, fn)
+  },
 
   // beautify
   getBeautifyStatus: () => ipcRenderer.invoke(BEAUTIFY_CHANNELS.GET_STATUS),
   installTranslucentTB: () => ipcRenderer.invoke(BEAUTIFY_CHANNELS.INSTALL_TRANSLUCENTTB),
   installNexus: () => ipcRenderer.invoke(BEAUTIFY_CHANNELS.INSTALL_NEXUS),
   applyTheme: (themeId) => ipcRenderer.invoke(BEAUTIFY_CHANNELS.APPLY_THEME, themeId),
+  onInstallProgress: (cb) => {
+    const fn = (_e: unknown, p: InstallProgress): void => cb(p)
+    ipcRenderer.on(BEAUTIFY_CHANNELS.INSTALL_PROGRESS, fn)
+    return () => ipcRenderer.removeListener(BEAUTIFY_CHANNELS.INSTALL_PROGRESS, fn)
+  },
 
   // wallpaper
   listWallpapers: () => ipcRenderer.invoke(WALLPAPER_CHANNELS.LIST),
