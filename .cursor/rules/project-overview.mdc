@@ -1,0 +1,74 @@
+---
+name: WinTuner Pro 项目概述
+description: WinTuner Pro 的产品定位、技术栈、分层架构与目录职责约定，所有开发任务的基础上下文
+alwaysApply: true
+---
+
+# WinTuner Pro 项目概述（项目级基础规则）
+
+> 本文件描述项目的「是什么、用什么、放哪里」。语言、通用助手行为以 `chinese-language.mdc`、`cursor-assistant-core.mdc` 为准，本文件只补充项目专属事实，不重复全局规则。
+
+## 1. 产品定位
+
+WinTuner Pro 是一款面向**游戏陪玩从业者与小型工作室（3-10 人）**的 Windows 一键优化桌面工具。核心价值是把「系统重装 + 优化 + 美化」全流程整合进一个**可视化、傻瓜式**的应用，让技术小白零门槛完成原本需要 IT 人员才能做的操作。
+
+与 DISM++ 等工具的差异：面向小白而非技术人员、全程可视化引导而非手动配置、覆盖重装/优化/美化一体而非单一功能。
+
+### 核心设计原则（功能开发必须遵守）
+
+- **零门槛**：用户无需理解任何技术原理，所有操作通过引导完成。
+- **纯软方案**：不依赖 PE 盘或外部引导介质。
+- **可恢复**：所有写系统的操作前必须自动备份关键配置（注册表 `.reg`、配置快照），支持一键还原。
+- **合规边界**：仅做系统初始化与优化，**严禁**任何反作弊绕过、破解、规避检测类逻辑。
+
+## 2. 技术栈（以此为准，勿擅自替换）
+
+| 层 | 技术 | 职责 |
+| --- | --- | --- |
+| UI 层 | Electron + React + TypeScript | 界面渲染、用户交互、进度展示 |
+| 通信层 | Electron IPC（主进程 ↔ 渲染进程） | 指令传递，渲染进程不直接触碰系统 |
+| 执行层 | Node.js `child_process` | 在主进程中调用 PowerShell 脚本 |
+| 脚本层 | PowerShell 5.1 / 7.x | WMI 查询、注册表读写、驱动/运行库安装 |
+| 资源层 | 本地离线包（驱动、运行库、字体、风格包、镜像） | 保证无网络也可完整运行 |
+
+- 构建工具优先使用 **Vite**（Electron + React + TS 主流方案），打包使用 **electron-builder**。如需变更需在 PR 说明理由。
+- 引入任何 Electron / React / Node / PowerShell 相关库或写不确定的 API 时，遵循 `context7-usage.mdc` 先查官方文档，勿凭旧记忆。
+
+## 3. 功能模块（六大模块）
+
+1. **系统重装与初始化**：DISM 部署、`systemreset.exe`、`sysprep /generalize`、RunOnce 重启续执行、驱动/运行库静默安装。
+2. **显卡竞技调优**：WMI 检测显卡（`Win32_VideoController`），NVIDIA / AMD 分别走各自竞技预设（Profile Inspector / 注册表 / 厂商 CLI）。
+3. **OEM 性能调度**（核心差异化）：WMI 读取（`Win32_ComputerSystem`）品牌型号，识别并切换联想/华硕/惠普/戴尔/雷蛇/机械革命/机械师/神舟等的最高性能模式，含 MUX 独显直连引导。
+4. **系统优化**：服务与启动项清理、网络优化（DNS/TCP/MTU）、电源与性能（卓越性能、核心停车）、存储与内存。
+5. **系统美化**：风格包（赛博/简约/电竞）、壁纸、图标、字体、Windhawk / Nexus 风格包生态对接。
+6. **配置备份与迁移**：注册表快照 + 配置导出为加密 `.wtp`（WinTunerProfile）文件，支持跨机器批量部署。
+
+## 4. 目录职责速查
+
+```
+src/main/        Electron 主进程：应用生命周期、窗口管理、IPC 处理、PowerShell 调度
+src/main/ipc/    IPC 通道定义与处理器（按模块拆分）
+src/main/services/ 主进程业务服务（脚本调度、备份、硬件检测等）
+src/preload/     预加载脚本：通过 contextBridge 暴露受控 API 给渲染进程
+src/renderer/    React UI（pages 页面 / components 组件 / store 状态 / styles 样式）
+src/shared/      主进程与渲染进程共享的类型(types)与常量(constants)
+scripts/system/  系统操作 PowerShell 脚本（重装、初始化、优化）
+scripts/gpu/     N 卡 / A 卡调优脚本
+scripts/oem/     各品牌 OEM 调度脚本（按品牌分文件）
+scripts/common/  PowerShell 公共函数（备份、日志、WMI 封装）
+resources/       离线资源：drivers 驱动 / runtimes 运行库 / themes 风格包 / fonts 字体
+build/           打包配置、应用图标、Windows manifest（requireAdministrator）
+docs/            设计文档、模块说明、PRD 衍生文档
+tests/           单元 / 集成测试
+```
+
+## 5. 关键工程约束
+
+- **权限**：应用通过 manifest 声明 `requireAdministrator`，启动弹 UAC；所有系统级 PowerShell 以提升权限运行。
+- **安全模型**：渲染进程开启 `contextIsolation`、禁用 `nodeIntegration`，一切系统操作经 preload + IPC 转交主进程，**禁止**在渲染进程直接调用 Node/系统能力。
+- **回滚**：写系统前在 `%AppData%\WinTunerPro\backups` 落备份，提供「历史记录」回滚。
+- **进度反馈**：耗时操作必须有进度条 + 阶段文案；错误用「人话」提示并给「重试/跳过」。
+
+## 6. 开发阶段（按此优先级排期）
+
+P0 基础架构（Electron 壳 + 硬件检测 + PowerShell 链路）→ P1 系统优化 + N 卡 → P2 OEM 调度 + A 卡 → P3 重装与续执行 → P4 美化与备份迁移 → Beta 内测。

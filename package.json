@@ -1,0 +1,25 @@
+{
+  "name": "wintuner-pro",
+  "version": "0.1.0",
+  "private": true,
+  "description": "面向游戏陪玩从业者与小型工作室的 Windows 一键优化桌面工具",
+  "author": "Fish-under-sea",
+  "license": "UNLICENSED",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "dev": "echo \"TODO: 启动 Vite + Electron 开发模式\" && exit 0",
+    "build": "echo \"TODO: 编译渲染进程与主进程\" && exit 0",
+    "package": "echo \"TODO: electron-builder 产出 Windows 安装包\" && exit 0",
+    "lint": "echo \"TODO: ESLint\" && exit 0",
+    "format": "echo \"TODO: Prettier\" && exit 0",
+    "test": "echo \"TODO: Vitest\" && exit 0"
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "win32"
+  ]
+}

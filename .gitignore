@@ -1,0 +1,66 @@
+# ===== 依赖 =====
+node_modules/
+.pnp/
+.pnp.js
+
+# ===== 构建产物 =====
+dist/
+out/
+build/Release/
+release/
+*.exe
+*.msi
+*.nsis
+
+# ===== 日志 =====
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ===== 缓存 / 临时 =====
+.cache/
+.temp/
+.tmp/
+.vite/
+*.tsbuildinfo
+
+# ===== 离线资源（体积大 / 可能涉及版权，改用外部分发或 Git LFS）=====
+# 仅保留目录结构与说明，实际资源文件不入库
+resources/drivers/*
+resources/runtimes/*
+resources/fonts/*
+resources/themes/*
+# 保留占位与说明文件
+!resources/**/README.md
+!resources/**/.gitkeep
+# 系统镜像由用户自备
+*.iso
+*.wim
+*.esd
+
+# ===== 敏感文件（严禁入库）=====
+*.pfx
+*.p12
+*.key
+*.pem
+.env
+.env.*
+!.env.example
+secrets/
+
+# ===== 用户数据 / 备份（运行时位于 %AppData%\WinTunerPro）=====
+*.wtp
+backups/
+
+# ===== 编辑器 / 系统 =====
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.suo
