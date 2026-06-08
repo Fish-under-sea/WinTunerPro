@@ -8,6 +8,21 @@
 
 $ErrorActionPreference = 'Stop'
 
+# 统一以 UTF-8 输出，保证进度文案（含中文）经管道被主进程正确解码（PS 5.1 默认编码会乱码）。
+try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } catch { }
+
+# 输出单行进度：WT_PROGRESS:{json}。主进程按行实时解析（见 beautifyService.runScriptStreaming）。
+# 注意：与最终的 Write-WtResult（同样输出单行 JSON）区分——进度行带 WT_PROGRESS: 前缀，
+# 不以 { 开头，因此不会被结果解析逻辑（取最后一个以 { 开头的可解析 JSON）误判。
+function Write-WtProgress {
+  param(
+    [Parameter(Mandatory)][int]$Percent,
+    [Parameter(Mandatory)][string]$Stage
+  )
+  $obj = [ordered]@{ percent = $Percent; stage = $Stage }
+  'WT_PROGRESS:' + ($obj | ConvertTo-Json -Compress)
+}
+
 function Write-WtResult {
   param(
     [Parameter(Mandatory)][bool]$Ok,

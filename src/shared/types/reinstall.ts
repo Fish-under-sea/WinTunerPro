@@ -39,6 +39,21 @@ export interface IsoValidationResult {
   errorMessage?: string
 }
 
+/**
+ * 系统重装部署进度事件（main→renderer 单向推送，`reinstall:deploy-progress`）。
+ * 注意：本期为「演示流程」，不执行任何真实破坏性系统操作（见 reinstallService.startDeploy）。
+ */
+export interface ReinstallProgress {
+  /** 百分比 0–100 */
+  percent: number
+  /** 当前阶段文案（人话，直接展示） */
+  stage: string
+  /** 是否已结束（演示流程到约 95% 即以 done 收尾） */
+  done?: boolean
+  /** 失败时的错误信息（done=true 且失败时有值） */
+  error?: string
+}
+
 /** 机器码信息（`reinstall:get-machine-id` 返回结构，仅读取展示） */
 export interface MachineIdInfo {
   /** 当前机器 SID（仅读取展示） */

@@ -11,6 +11,7 @@ import {
   Skeleton,
   Modal,
   InfoList,
+  Progress,
 } from '@renderer/components/ui'
 import type { StepItem, InfoRow } from '@renderer/components/ui'
 import { Icon } from '@renderer/components/icons'
@@ -33,8 +34,21 @@ const KIND_ICON: Record<SystemImageKind, IconName> = {
 }
 
 export function SystemReinstallPage(): React.JSX.Element {
-  const { sources, machineId, loading, error, loaded, importing, lastImport, load, importIso } =
-    useReinstallStore()
+  const {
+    sources,
+    machineId,
+    loading,
+    error,
+    loaded,
+    importing,
+    lastImport,
+    deploying,
+    deployProgress,
+    load,
+    importIso,
+    startDeploy,
+    resetDeploy,
+  } = useReinstallStore()
   const [selected, setSelected] = useState<string | null>(null)
   const [machineModalOpen, setMachineModalOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -42,6 +56,10 @@ export function SystemReinstallPage(): React.JSX.Element {
   useEffect(() => {
     void load()
   }, [load])
+
+  // 部署进度驱动顶部步骤指示：有进度即进入「开始部署」步
+  const currentStep = deployProgress ? 2 : 0
+  const deployDone = deployProgress?.done ?? false
 
   const handlePickIso = (): void => fileInputRef.current?.click()
 
@@ -74,7 +92,7 @@ export function SystemReinstallPage(): React.JSX.Element {
       />
 
       <Card className="mb-5">
-        <Stepper steps={STEPS} current={0} />
+        <Stepper steps={STEPS} current={currentStep} />
       </Card>
 
       <AsyncBoundary
@@ -97,10 +115,11 @@ export function SystemReinstallPage(): React.JSX.Element {
               <Button
                 size="sm"
                 rightIcon="arrowRight"
-                disabled={!selected}
-                onClick={() => toast.info('部署链路将在后续版本上线', '当前为入口与向导设计阶段')}
+                disabled={!selected || deploying}
+                loading={deploying}
+                onClick={() => selected && void startDeploy(selected)}
               >
-                下一步
+                开始部署
               </Button>
             }
           >
@@ -199,6 +218,43 @@ export function SystemReinstallPage(): React.JSX.Element {
               onChange={handleFileChange}
             />
           </SectionCard>
+
+          {deployProgress && (
+            <SectionCard
+              icon="reinstall"
+              title="第三步 · 部署进度"
+              description="实时展示部署各阶段进度。"
+              action={
+                deployDone ? (
+                  <Button size="sm" variant="outline" leftIcon="refresh" onClick={resetDeploy}>
+                    重新选择
+                  </Button>
+                ) : undefined
+              }
+            >
+              <div className="mb-3 flex items-start gap-2.5 rounded-xl border border-warning-soft bg-warning-soft/40 px-4 py-3 text-xs text-text-muted">
+                <Icon name="shieldAlert" size={16} className="mt-0.5 shrink-0 text-warning" />
+                <span>
+                  当前为<span className="font-semibold text-text">演示流程</span>
+                  ，不会对本机执行任何真实写系统操作。真实无人值守部署（DISM 应用镜像 + 引导写入 +
+                  重启续执行）将在后续版本上线。
+                </span>
+              </div>
+              <div className="mb-2 flex items-center justify-between text-sm">
+                <span className="flex items-center gap-1.5 text-text-muted">
+                  {!deployDone && (
+                    <Icon name="reinstall" size={15} className="animate-spin text-primary" />
+                  )}
+                  {deployDone && <Icon name="checkCircle" size={15} className="text-success" />}
+                  {deployProgress.stage}
+                </span>
+                <span className="font-mono tabular-nums text-text">
+                  {Math.round(deployProgress.percent)}%
+                </span>
+              </div>
+              <Progress value={deployProgress.percent} tone={deployDone ? 'success' : 'primary'} />
+            </SectionCard>
+          )}
 
           <SectionCard
             icon="fingerprint"

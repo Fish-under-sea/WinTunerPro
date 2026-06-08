@@ -1,10 +1,20 @@
 import { useEffect } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useBeautifyStore } from '@renderer/store/beautifyStore'
 import { AsyncBoundary } from '@renderer/components/AsyncBoundary'
-import { PageHeader, SectionCard, Card, Tag, Button, Skeleton } from '@renderer/components/ui'
+import {
+  PageHeader,
+  SectionCard,
+  Card,
+  Tag,
+  Button,
+  Skeleton,
+  Progress,
+} from '@renderer/components/ui'
 import { Icon } from '@renderer/components/icons'
 import { cn } from '@renderer/lib/cn'
-import type { ToolInstallStatus } from '@shared/types'
+import { EASE_OUT } from '@renderer/lib/motion'
+import type { InstallProgress, ToolInstallStatus } from '@shared/types'
 
 /** 本地风格包清单（contract 未提供列表，预览用渐变色块示意） */
 const THEME_PACKS: { id: string; name: string; desc: string; gradient: string }[] = [
@@ -35,6 +45,7 @@ export function BeautifyPage(): React.JSX.Element {
     error,
     loaded,
     busy,
+    progress,
     load,
     installTranslucentTB,
     installNexus,
@@ -89,6 +100,7 @@ export function BeautifyPage(): React.JSX.Element {
                   status={data.translucenttb}
                   loading={busy === 'translucenttb'}
                   disabled={busy !== null}
+                  progress={progress.translucenttb}
                   onInstall={() => void installTranslucentTB()}
                 />
                 <ToolCard
@@ -97,6 +109,7 @@ export function BeautifyPage(): React.JSX.Element {
                   status={data.nexus}
                   loading={busy === 'nexus'}
                   disabled={busy !== null}
+                  progress={progress.nexus}
                   onInstall={() => void installNexus()}
                 />
               </div>
@@ -108,36 +121,44 @@ export function BeautifyPage(): React.JSX.Element {
               description="一键套用壁纸、图标、任务栏样式的整体风格组合。"
             >
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                {THEME_PACKS.map((pack) => {
+                {THEME_PACKS.map((pack, i) => {
                   const applied = data.currentThemeId === pack.id
                   const isBusy = busy === pack.id
                   return (
-                    <Card key={pack.id} padding="none" className="overflow-hidden">
-                      <div className={cn('relative h-28 bg-gradient-to-br', pack.gradient)}>
-                        {applied && (
-                          <span className="absolute right-2 top-2">
-                            <Tag tone="success" icon="check">
-                              使用中
-                            </Tag>
-                          </span>
-                        )}
-                      </div>
-                      <div className="p-4">
-                        <div className="text-sm font-semibold text-text">{pack.name}</div>
-                        <p className="mt-0.5 text-xs text-text-muted">{pack.desc}</p>
-                        <Button
-                          className="mt-3"
-                          size="sm"
-                          block
-                          variant={applied ? 'outline' : 'primary'}
-                          disabled={applied || (busy !== null && !isBusy)}
-                          loading={isBusy}
-                          onClick={() => void applyTheme(pack.id)}
-                        >
-                          {applied ? '已应用' : '应用风格'}
-                        </Button>
-                      </div>
-                    </Card>
+                    <motion.div
+                      key={pack.id}
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.32, delay: i * 0.05, ease: EASE_OUT }}
+                      whileHover={{ y: -3 }}
+                    >
+                      <Card padding="none" className="overflow-hidden">
+                        <div className={cn('relative h-28 bg-gradient-to-br', pack.gradient)}>
+                          {applied && (
+                            <span className="absolute right-2 top-2">
+                              <Tag tone="success" icon="check">
+                                使用中
+                              </Tag>
+                            </span>
+                          )}
+                        </div>
+                        <div className="p-4">
+                          <div className="text-sm font-semibold text-text">{pack.name}</div>
+                          <p className="mt-0.5 text-xs text-text-muted">{pack.desc}</p>
+                          <Button
+                            className="mt-3"
+                            size="sm"
+                            block
+                            variant={applied ? 'outline' : 'primary'}
+                            disabled={applied || (busy !== null && !isBusy)}
+                            loading={isBusy}
+                            onClick={() => void applyTheme(pack.id)}
+                          >
+                            {applied ? '已应用' : '应用风格'}
+                          </Button>
+                        </div>
+                      </Card>
+                    </motion.div>
                   )
                 })}
               </div>
@@ -155,6 +176,7 @@ function ToolCard({
   status,
   loading,
   disabled,
+  progress,
   onInstall,
 }: {
   name: string
@@ -162,8 +184,13 @@ function ToolCard({
   status: ToolInstallStatus
   loading: boolean
   disabled: boolean
+  progress: InstallProgress | null
   onInstall: () => void
 }): React.JSX.Element {
+  // 安装进行中：用进度条 + 阶段文案 + 百分比替代「按钮转圈」
+  const percent = progress ? Math.round(progress.percent) : 0
+  const stage = progress?.stage ?? '准备中'
+
   return (
     <div className="flex items-start gap-3 rounded-xl border border-border bg-surface-2 p-4">
       <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
@@ -186,17 +213,55 @@ function ToolCard({
         {status.installed && status.version && (
           <p className="mt-0.5 text-xs text-text-subtle">版本 {status.version}</p>
         )}
-        <Button
-          className="mt-2.5"
-          size="sm"
-          variant={status.installed ? 'outline' : 'primary'}
-          leftIcon={status.installed ? 'check' : 'download'}
-          loading={loading}
-          disabled={disabled || status.installed}
-          onClick={onInstall}
-        >
-          {status.installed ? '已安装' : '安装'}
-        </Button>
+
+        <AnimatePresence mode="wait" initial={false}>
+          {loading ? (
+            <motion.div
+              key="progress"
+              className="mt-3"
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.2, ease: EASE_OUT }}
+            >
+              <div className="mb-1.5 flex items-center justify-between text-xs">
+                <span className="flex items-center gap-1.5 text-text-muted">
+                  <Icon name="download" size={13} className="text-primary" />
+                  {stage}
+                </span>
+                <motion.span
+                  key={percent}
+                  className="font-mono tabular-nums text-text"
+                  initial={{ opacity: 0.5 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  {percent}%
+                </motion.span>
+              </div>
+              <Progress value={percent} />
+            </motion.div>
+          ) : (
+            <motion.div
+              key="button"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18, ease: EASE_OUT }}
+            >
+              <Button
+                className="mt-2.5"
+                size="sm"
+                variant={status.installed ? 'outline' : 'primary'}
+                leftIcon={status.installed ? 'check' : 'download'}
+                disabled={disabled || status.installed}
+                onClick={onInstall}
+              >
+                {status.installed ? '已安装' : '安装'}
+              </Button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   )
