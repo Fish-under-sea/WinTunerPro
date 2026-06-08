@@ -56,6 +56,8 @@ secrets/
 backups/
 
 # ===== 编辑器 / 系统 =====
+# Cursor 本地 AI/IDE 配置不入库
+.cursor/
 .idea/
 .vscode/*
 !.vscode/extensions.json
