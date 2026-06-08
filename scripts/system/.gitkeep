@@ -1,0 +1,2 @@
+# 占位：本期 hardware / power / reinstall / beautify / wallpaper 模块的真实 .ps1 待功能代理实现。
+# 命名遵循 动词-名词.ps1（如 Get-SystemInfo.ps1、Set-PowerPlan.ps1、Get-MachineId.ps1）。
