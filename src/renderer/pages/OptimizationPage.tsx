@@ -1,0 +1,304 @@
+import { useMemo, useState } from 'react'
+import { PageHeader, SectionCard, Card, Tag, Switch, Button } from '@renderer/components/ui'
+import type { TagTone } from '@renderer/components/ui'
+import { Icon } from '@renderer/components/icons'
+import type { IconName } from '@renderer/components/icons'
+import { toast } from '@renderer/store/toastStore'
+
+type Risk = 'low' | 'mid' | 'high'
+
+interface OptItem {
+  id: string
+  name: string
+  desc: string
+  risk: Risk
+  defaultOn: boolean
+}
+
+interface OptCategory {
+  id: string
+  title: string
+  icon: IconName
+  description: string
+  items: OptItem[]
+}
+
+/**
+ * 优化分区配置（依据 docs/dismpp-reference.md 的能力清单）。
+ * 高风险项默认关闭并单独折叠；服务/Appx 采用白名单制理念。
+ * 本期以分区 + 选项 + 一键入口的 UI 呈现，执行动作后续接入脚本层。
+ */
+const CATEGORIES: OptCategory[] = [
+  {
+    id: 'space',
+    title: '空间回收',
+    icon: 'trash',
+    description: '清理临时文件、缓存与系统冗余组件，释放磁盘空间。',
+    items: [
+      {
+        id: 'temp',
+        name: '临时文件与缓存',
+        desc: '清理 %TEMP%、系统 Temp、应用缓存',
+        risk: 'low',
+        defaultOn: true,
+      },
+      {
+        id: 'recycle',
+        name: '清空回收站',
+        desc: '清理所有驱动器的回收站',
+        risk: 'low',
+        defaultOn: true,
+      },
+      {
+        id: 'wu-cache',
+        name: 'Windows 更新缓存',
+        desc: '清理 SoftwareDistribution 下载缓存',
+        risk: 'low',
+        defaultOn: true,
+      },
+      {
+        id: 'winsxs',
+        name: 'WinSxS 组件清理',
+        desc: '清理已被取代的旧版系统组件',
+        risk: 'mid',
+        defaultOn: true,
+      },
+      {
+        id: 'resetbase',
+        name: 'WinSxS 深度清理（ResetBase）',
+        desc: '执行后将无法卸载已安装的更新',
+        risk: 'high',
+        defaultOn: false,
+      },
+    ],
+  },
+  {
+    id: 'service',
+    title: '服务与启动项',
+    icon: 'list',
+    description: '按白名单精简非必要的服务、计划任务与开机自启项。',
+    items: [
+      {
+        id: 'startup',
+        name: '精简开机启动项',
+        desc: '禁用拖慢开机的非必要自启程序',
+        risk: 'low',
+        defaultOn: true,
+      },
+      {
+        id: 'diagtrack',
+        name: '禁用诊断跟踪服务',
+        desc: '关闭 DiagTrack 遥测服务（可逆）',
+        risk: 'mid',
+        defaultOn: true,
+      },
+      {
+        id: 'ceip',
+        name: '关闭客户体验改善任务',
+        desc: '禁用 CEIP 相关计划任务',
+        risk: 'mid',
+        defaultOn: true,
+      },
+    ],
+  },
+  {
+    id: 'privacy',
+    title: '隐私与体验',
+    icon: 'shield',
+    description: '调整资源管理器体验与隐私相关注册表开关。',
+    items: [
+      {
+        id: 'fileext',
+        name: '显示文件扩展名',
+        desc: '在资源管理器中始终显示扩展名',
+        risk: 'low',
+        defaultOn: true,
+      },
+      {
+        id: 'autoplay',
+        name: '关闭自动播放',
+        desc: '插入设备时不自动执行',
+        risk: 'low',
+        defaultOn: false,
+      },
+      {
+        id: 'telemetry',
+        name: '降低遥测等级',
+        desc: '将诊断数据收集降至最低（保留必要安全项）',
+        risk: 'mid',
+        defaultOn: true,
+      },
+    ],
+  },
+  {
+    id: 'appx',
+    title: 'Appx 应用清理',
+    icon: 'trash',
+    description: '按白名单卸载内置冗余应用（仅安全项，禁止全选）。',
+    items: [
+      {
+        id: 'xbox',
+        name: 'Xbox 游戏录制组件',
+        desc: '卸载 Xbox Game Bar 等组件',
+        risk: 'mid',
+        defaultOn: false,
+      },
+      {
+        id: 'news',
+        name: '资讯与天气',
+        desc: '卸载内置资讯磁贴应用',
+        risk: 'low',
+        defaultOn: false,
+      },
+      {
+        id: 'tips',
+        name: '使用技巧（Tips）',
+        desc: '卸载系统提示应用',
+        risk: 'low',
+        defaultOn: false,
+      },
+    ],
+  },
+]
+
+const RISK_META: Record<Risk, { label: string; tone: TagTone }> = {
+  low: { label: '低风险', tone: 'success' },
+  mid: { label: '中风险', tone: 'warning' },
+  high: { label: '高风险', tone: 'danger' },
+}
+
+export function OptimizationPage(): React.JSX.Element {
+  const [state, setState] = useState<Record<string, boolean>>(() => {
+    const init: Record<string, boolean> = {}
+    for (const cat of CATEGORIES) for (const item of cat.items) init[item.id] = item.defaultOn
+    return init
+  })
+  const [expertOpen, setExpertOpen] = useState<Record<string, boolean>>({})
+
+  const selectedCount = useMemo(() => Object.values(state).filter(Boolean).length, [state])
+
+  const toggle = (id: string, v: boolean): void => setState((p) => ({ ...p, [id]: v }))
+
+  return (
+    <div>
+      <PageHeader
+        icon="zap"
+        title="系统优化"
+        description="勾选即生效的系统优化项，按分区组织。危险项默认折叠，所有写系统操作前会自动建立还原点。"
+        action={
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              leftIcon="shield"
+              onClick={() => toast.info('一键体检将在后续版本上线')}
+            >
+              一键体检
+            </Button>
+            <Button
+              size="sm"
+              leftIcon="zap"
+              onClick={() =>
+                toast.info('优化执行将在后续版本上线', `已选择 ${selectedCount} 项优化`)
+              }
+            >
+              一键优化
+            </Button>
+          </div>
+        }
+      />
+
+      <div className="mb-5 flex items-start gap-2.5 rounded-xl border border-info-soft bg-info-soft/50 px-4 py-3 text-xs text-text-muted">
+        <Icon name="shield" size={16} className="mt-0.5 shrink-0 text-primary" />
+        <span>
+          优化前会自动创建系统还原点，服务与 Appx
+          清理均采用白名单制（仅经过验证的安全项），可随时在「配置备份」中回滚。 当前已选择{' '}
+          <span className="font-semibold text-text">{selectedCount}</span> 项。
+        </span>
+      </div>
+
+      <div className="space-y-5">
+        {CATEGORIES.map((cat) => {
+          const normalItems = cat.items.filter((i) => i.risk !== 'high')
+          const expertItems = cat.items.filter((i) => i.risk === 'high')
+          const open = expertOpen[cat.id] ?? false
+          return (
+            <SectionCard
+              key={cat.id}
+              icon={cat.icon}
+              title={cat.title}
+              description={cat.description}
+            >
+              <div className="space-y-2.5">
+                {normalItems.map((item) => (
+                  <OptRow
+                    key={item.id}
+                    item={item}
+                    checked={state[item.id] ?? false}
+                    onChange={(v) => toggle(item.id, v)}
+                  />
+                ))}
+              </div>
+
+              {expertItems.length > 0 && (
+                <div className="mt-3 overflow-hidden rounded-xl border border-danger-soft">
+                  <button
+                    type="button"
+                    onClick={() => setExpertOpen((p) => ({ ...p, [cat.id]: !open }))}
+                    className="flex w-full cursor-pointer items-center justify-between gap-2 bg-danger-soft/50 px-4 py-2.5 text-left transition-colors hover:bg-danger-soft"
+                  >
+                    <span className="flex items-center gap-2 text-sm font-medium text-danger">
+                      <Icon name="shieldAlert" size={16} />
+                      专家项（高风险，默认关闭）
+                    </span>
+                    <Icon
+                      name={open ? 'chevronDown' : 'chevronRight'}
+                      size={16}
+                      className="text-danger"
+                    />
+                  </button>
+                  {open && (
+                    <div className="space-y-2.5 p-3">
+                      {expertItems.map((item) => (
+                        <OptRow
+                          key={item.id}
+                          item={item}
+                          checked={state[item.id] ?? false}
+                          onChange={(v) => toggle(item.id, v)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </SectionCard>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function OptRow({
+  item,
+  checked,
+  onChange,
+}: {
+  item: OptItem
+  checked: boolean
+  onChange: (v: boolean) => void
+}): React.JSX.Element {
+  const risk = RISK_META[item.risk]
+  return (
+    <Card padding="sm" className="flex items-center justify-between gap-4 !rounded-xl !shadow-none">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-text">{item.name}</span>
+          <Tag tone={risk.tone}>{risk.label}</Tag>
+        </div>
+        <p className="mt-0.5 text-xs text-text-muted">{item.desc}</p>
+      </div>
+      <Switch label={item.name} checked={checked} onChange={onChange} />
+    </Card>
+  )
+}
