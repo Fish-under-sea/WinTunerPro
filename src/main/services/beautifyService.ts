@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { dirname, extname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { app } from 'electron'
-import type { BeautifyStatus, ToolInstallStatus } from '@shared/types/beautify'
+import type { BeautifyStatus, NexusInstallResult, ToolInstallStatus } from '@shared/types/beautify'
 
 /** 安装过程进度回调的载荷（不含 tool；tool 由 IPC 处理器补齐后推送渲染进程） */
 export interface InstallProgressUpdate {
@@ -305,7 +305,7 @@ export async function installTranslucentTB(onProgress?: InstallProgressCb): Prom
 }
 
 /** 安装 Winstep Nexus（写操作：离线 exe 静默安装 + 导入 .reg 配置） */
-export async function installNexus(onProgress?: InstallProgressCb): Promise<void> {
+export async function installNexus(onProgress?: InstallProgressCb): Promise<NexusInstallResult> {
   onProgress?.({ percent: 2, stage: '准备安装环境' })
   const toolDir = join(getResourcesRoot(), 'themes', 'nexus')
   const installer = findFileByExt(toolDir, ['.exe'])
@@ -321,8 +321,14 @@ export async function installNexus(onProgress?: InstallProgressCb): Promise<void
     args.push('-ConfigSource', config)
   }
 
-  await runScriptStreaming('beautify', 'Install-Nexus.ps1', args, onProgress)
+  const result = await runScriptStreaming<NexusInstallResult>(
+    'beautify',
+    'Install-Nexus.ps1',
+    args,
+    onProgress,
+  )
   onProgress?.({ percent: 100, stage: '安装完成' })
+  return result
 }
 
 /**

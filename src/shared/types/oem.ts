@@ -80,3 +80,51 @@ export interface OemDetectResult {
   /** 兜底说明：当 supportsPerformanceMode=false 时，向用户解释为何走电源设置兜底 */
   fallbackNote: string
 }
+
+/** OEM 性能模式档位 */
+export type OemPerformanceMode = 'quiet' | 'balanced' | 'performance' | 'beast'
+
+/** OEM 兜底目标模式（与电源计划语义对齐） */
+export type OemFallbackTargetMode = 'quiet' | 'balanced' | 'performance' | 'turbo'
+
+/** OEM 兜底匹配详情（用于可解释展示） */
+export interface OemFallbackMatchDetail {
+  targetMode: OemFallbackTargetMode
+  selectedPlanGuid: string
+  selectedPlanName: string
+  score: number
+  confidence: 'high' | 'medium' | 'low'
+  matchedKeywords: string[]
+  reason: string
+  warning?: string
+}
+
+/** OEM 应用结果（`oem:apply-mode`） */
+export interface OemApplyResult {
+  /** 是否整体成功（品牌调度或电源兜底至少其一生效） */
+  success: boolean
+  /** 是否成功应用品牌专属模式（脚本原始语义） */
+  appliedBrandMode?: boolean
+  /** 识别到的品牌 */
+  brand: OemBrand
+  /** 请求档位 */
+  mode: OemPerformanceMode
+  /** 是否命中并执行了品牌专属脚本 */
+  usedBrandMode: boolean
+  /** 品牌脚本是否建议走兜底（脚本原始语义） */
+  fallbackUsed?: boolean
+  /** 是否走了电源计划兜底 */
+  usedPowerFallback: boolean
+  /** 兜底后激活的电源计划（若有） */
+  fallbackPlanName?: string
+  /** 兜底目标模式（狂暴->Turbo / 智能均衡->平衡 / 高性能->Performance / 静音省电->Silent） */
+  fallbackTargetMode?: OemFallbackTargetMode
+  /** 兜底计划匹配详情（用于解释“匹配了哪个计划，为什么”） */
+  fallbackMatch?: OemFallbackMatchDetail
+  /** 结果文案 */
+  message: string
+  /** 非致命告警 */
+  warnings: string[]
+  /** 诊断细节（用于 UI 展示与日志） */
+  details?: Record<string, unknown>
+}

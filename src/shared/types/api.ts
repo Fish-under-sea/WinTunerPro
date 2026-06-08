@@ -1,7 +1,14 @@
 import type { AppInfo } from './app'
 import type { SystemInfo, DeviceInfo } from './hardware'
 import type { GpuDetectResult } from './gpu'
-import type { OemDetectResult } from './oem'
+import type {
+  GpuApplyResult,
+  GpuTweakApplyResult,
+  GpuTweakOption,
+  GpuTweakOptionId,
+  NvidiaPresetId,
+} from './gpu'
+import type { OemDetectResult, OemApplyResult, OemPerformanceMode } from './oem'
 import type { PowerState } from './power'
 import type {
   SystemImageSource,
@@ -9,8 +16,9 @@ import type {
   MachineIdInfo,
   ReinstallProgress,
 } from './reinstall'
-import type { BeautifyStatus, InstallProgress } from './beautify'
+import type { BeautifyStatus, InstallProgress, NexusInstallResult } from './beautify'
 import type { WallpaperState, WallpaperEngineStatus } from './wallpaper'
+import type { OptimizationApplyResult, OptimizationItemId, OptimizationScanResult } from './optimization'
 
 /**
  * preload 通过 contextBridge 暴露给渲染进程的白名单 API 契约。
@@ -38,10 +46,18 @@ export interface ElectronAPI {
   // ===== gpu：显卡（只读） =====
   /** 检测显卡 */
   detectGpu: () => Promise<GpuDetectResult>
+  /** 列出显卡调优可选项（含支持状态） */
+  listGpuTweakOptions: () => Promise<GpuTweakOption[]>
+  /** 批量应用显卡调优项（写操作） */
+  applyGpuTweaks: (optionIds: GpuTweakOptionId[]) => Promise<GpuTweakApplyResult>
+  /** 应用 NVIDIA 基础预设（写操作） */
+  applyNvidiaPreset: (presetId: NvidiaPresetId) => Promise<GpuApplyResult>
 
   // ===== oem：机箱判定 + 品牌识别（只读） =====
   /** 检测机箱类型与 OEM 品牌 */
   detectOem: () => Promise<OemDetectResult>
+  /** 应用 OEM 性能模式（写操作，失败时自动走电源兜底） */
+  applyOemMode: (mode: OemPerformanceMode) => Promise<OemApplyResult>
 
   // ===== power：电源计划 =====
   /** 读取电源计划列表与可改性 */
@@ -67,7 +83,7 @@ export interface ElectronAPI {
   /** 安装 TranslucentTB（写操作） */
   installTranslucentTB: () => Promise<void>
   /** 安装 Nexus（写操作） */
-  installNexus: () => Promise<void>
+  installNexus: () => Promise<NexusInstallResult>
   /** 应用风格包（写操作） */
   applyTheme: (themeId: string) => Promise<void>
   /** 订阅安装进度事件（TranslucentTB / Nexus），返回取消订阅函数 */
@@ -82,4 +98,10 @@ export interface ElectronAPI {
   detectWallpaperEngine: () => Promise<WallpaperEngineStatus>
   /** 引导安装 Wallpaper Engine（写操作） */
   guideInstallWallpaperEngine: () => Promise<void>
+
+  // ===== optimization：系统优化体检 + 执行 =====
+  /** 体检优化项（只读，不修改系统） */
+  scanOptimizations: (itemIds: OptimizationItemId[]) => Promise<OptimizationScanResult>
+  /** 执行优化项（写操作，按 itemId 白名单） */
+  applyOptimizations: (itemIds: OptimizationItemId[]) => Promise<OptimizationApplyResult>
 }

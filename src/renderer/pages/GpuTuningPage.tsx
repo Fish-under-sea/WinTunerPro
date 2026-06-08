@@ -1,20 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useGpuStore } from '@renderer/store/gpuStore'
 import { AsyncBoundary } from '@renderer/components/AsyncBoundary'
-import {
-  PageHeader,
-  SectionCard,
-  Card,
-  Tag,
-  Switch,
-  Skeleton,
-  Button,
-} from '@renderer/components/ui'
+import { PageHeader, SectionCard, Card, Tag, Skeleton, Button } from '@renderer/components/ui'
 import type { TagTone } from '@renderer/components/ui'
 import { Icon } from '@renderer/components/icons'
-import type { GpuVendor } from '@shared/types'
+import type { GpuTweakOptionId, GpuVendor } from '@shared/types'
 import { formatVram, orDash } from '@renderer/lib/format'
-import { toast } from '@renderer/store/toastStore'
 
 /** 厂商 → 展示名与配色 */
 const VENDOR_META: Record<GpuVendor, { label: string; tone: TagTone }> = {
@@ -24,66 +15,35 @@ const VENDOR_META: Record<GpuVendor, { label: string; tone: TagTone }> = {
   Unknown: { label: '未知厂商', tone: 'neutral' },
 }
 
-/** 竞技调优预设项（本期为 UI 设计，落地动作后续接入脚本层） */
-interface PresetItem {
-  id: string
-  name: string
-  desc: string
-  recommended: boolean
-}
-
-const COMMON_PRESETS: PresetItem[] = [
-  {
-    id: 'low-latency',
-    name: '超低延迟模式',
-    desc: '关闭三重缓冲、降低预渲染帧，减少操作延迟',
-    recommended: true,
-  },
-  {
-    id: 'power-max',
-    name: '电源管理：最高性能',
-    desc: '锁定显卡高频运行，避免动态降频带来的帧波动',
-    recommended: true,
-  },
-  {
-    id: 'vsync-off',
-    name: '关闭垂直同步',
-    desc: '由游戏内自行管理同步，竞技场景优先低延迟',
-    recommended: true,
-  },
-  {
-    id: 'texture-perf',
-    name: '纹理过滤：性能优先',
-    desc: '牺牲少量画质换取更稳定的帧率',
-    recommended: false,
-  },
-  {
-    id: 'shader-cache',
-    name: '着色器缓存优化',
-    desc: '增大着色器缓存，减少卡顿与编译抖动',
-    recommended: false,
-  },
-]
-
 export function GpuTuningPage(): React.JSX.Element {
-  const { data, loading, error, loaded, load } = useGpuStore()
-  const [enabled, setEnabled] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(COMMON_PRESETS.map((p) => [p.id, p.recommended])),
-  )
+  const { data, options, loading, error, loaded, load, applyTweaks, applying, lastApplyResult } = useGpuStore()
+  const [selectedIds, setSelectedIds] = useState<GpuTweakOptionId[]>([])
 
   useEffect(() => {
     void load()
   }, [load])
 
+  useEffect(() => {
+    setSelectedIds((prev) => prev.filter((id) => options.some((item) => item.id === id && item.available)))
+  }, [options])
+
   const vendor = data?.primaryVendor ?? 'Unknown'
   const meta = VENDOR_META[vendor]
+  const availableCount = useMemo(() => options.filter((item) => item.available).length, [options])
+
+  const toggleOption = (id: GpuTweakOptionId, checked: boolean): void => {
+    setSelectedIds((prev) => {
+      if (checked) return prev.includes(id) ? prev : [...prev, id]
+      return prev.filter((x) => x !== id)
+    })
+  }
 
   return (
     <div>
       <PageHeader
         icon="gpu"
         title="显卡调优"
-        description="检测显卡型号、显存与驱动，并按厂商提供竞技调优预设。当前预设为可视化设计，应用动作将在后续版本接入。"
+        description="按可勾选的具体调节项执行优化，每项都展示作用、利弊和可用性，并返回逐项执行结果。"
         action={
           <Button
             variant="outline"
@@ -115,7 +75,7 @@ export function GpuTuningPage(): React.JSX.Element {
             description={
               <span>
                 主显卡厂商：<span className="font-medium text-text">{meta.label}</span>
-                ，将据此匹配调优预设
+                ，据此判定可执行调节项
               </span>
             }
           >
@@ -154,47 +114,93 @@ export function GpuTuningPage(): React.JSX.Element {
 
           <SectionCard
             icon="zap"
-            title="竞技调优预设"
-            description="为低延迟竞技场景优化的显卡设置组合，可逐项开关。"
+            title="显卡调节项"
+            description={`可执行 ${availableCount} 项，已选择 ${selectedIds.length} 项。点击后将批量执行并逐项回传成功/失败/跳过原因。`}
             action={
               <Button
                 size="sm"
                 leftIcon="check"
-                onClick={() => toast.info('预设应用将在后续版本上线', '当前为可视化设计阶段')}
+                loading={applying}
+                disabled={selectedIds.length === 0}
+                onClick={() => void applyTweaks(selectedIds)}
               >
-                应用所选预设
+                应用所选项
               </Button>
             }
           >
             <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-info-soft bg-info-soft/50 px-4 py-3 text-xs text-text-muted">
               <Icon name="info" size={16} className="mt-0.5 shrink-0 text-primary" />
               <span>
-                以下开关为本期可视化设计。落地后将通过厂商工具（NVIDIA Profile Inspector / 注册表 /
-                显卡 CLI）下发， 并在写入前自动备份当前显卡配置以便还原。
+                已选项会按顺序执行，单项失败不会中断整批任务；每项都会返回「成功 / 失败 / 跳过 + 原因」。
               </span>
             </div>
             <div className="space-y-2.5">
-              {COMMON_PRESETS.map((preset) => (
-                <Card
-                  key={preset.id}
-                  padding="sm"
-                  className="flex items-center justify-between gap-4 !rounded-xl !shadow-none"
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-text">{preset.name}</span>
-                      {preset.recommended && <Tag tone="primary">推荐</Tag>}
+              {options.map((item) => {
+                const checked = selectedIds.includes(item.id)
+                return (
+                  <Card
+                    key={item.id}
+                    padding="sm"
+                    className="flex items-center justify-between gap-4 !rounded-xl !shadow-none"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-text">{item.name}</span>
+                        <Tag tone={item.available ? 'success' : 'neutral'} dot>
+                          {item.available ? '支持' : '不支持'}
+                        </Tag>
+                      </div>
+                      <p className="mt-0.5 text-xs text-text-muted">{item.description}</p>
+                      <p className="mt-1 text-[11px] text-text-subtle">利弊/风险：{item.tradeoff}</p>
+                      <p className="mt-1 text-[11px] text-text-subtle">可用性：{item.availabilityReason}</p>
                     </div>
-                    <p className="mt-0.5 text-xs text-text-muted">{preset.desc}</p>
-                  </div>
-                  <Switch
-                    label={preset.name}
-                    checked={enabled[preset.id] ?? false}
-                    onChange={(v) => setEnabled((prev) => ({ ...prev, [preset.id]: v }))}
-                  />
-                </Card>
-              ))}
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={!item.available || applying}
+                      onChange={(e) => toggleOption(item.id, e.target.checked)}
+                      className="h-4 w-4 cursor-pointer rounded border-border text-primary focus:ring-primary disabled:cursor-not-allowed disabled:opacity-50"
+                    />
+                  </Card>
+                )
+              })}
             </div>
+            {lastApplyResult && (
+              <div className="mt-4 rounded-xl border border-border bg-surface-2 px-4 py-3 text-xs text-text-muted space-y-2">
+                <div className="flex items-center gap-2 text-sm font-medium text-text">
+                  <Icon name={lastApplyResult.success ? 'checkCircle' : 'shieldAlert'} size={16} />
+                  执行结果：{lastApplyResult.summary}
+                </div>
+                <div className="space-y-1">
+                  {lastApplyResult.results.map((item) => (
+                    <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg bg-surface px-3 py-2">
+                      <span className="font-medium text-text">{item.id}</span>
+                      <span className="flex items-center gap-2">
+                        <Tag
+                          tone={
+                            item.status === 'success'
+                              ? 'success'
+                              : item.status === 'failed'
+                                ? 'danger'
+                                : 'warning'
+                          }
+                        >
+                          {item.status === 'success'
+                            ? '成功'
+                            : item.status === 'failed'
+                              ? '失败'
+                              : '跳过'}
+                        </Tag>
+                        <span>{item.reason}</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {lastApplyResult.warnings.length > 0 && (
+                  <p>告警：{lastApplyResult.warnings.join('；')}</p>
+                )}
+              </div>
+            )}
           </SectionCard>
         </div>
       </AsyncBoundary>

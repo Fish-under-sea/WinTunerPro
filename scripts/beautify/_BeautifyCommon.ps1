@@ -168,3 +168,57 @@ function Import-TtbConfigFile {
   Copy-Item -LiteralPath $ConfigSource -Destination $target -Force
   return [ordered]@{ target = $target; backup = $backup }
 }
+
+# 更稳健地导入 .reg：先直接 reg import，失败时尝试转 UTF-16 再导入（兼容 UTF-8 源文件）。
+function Import-RegistryFileRobust {
+  param(
+    [Parameter(Mandatory)][string]$ConfigSource
+  )
+  if (-not (Test-Path -LiteralPath $ConfigSource -PathType Leaf)) {
+    throw "注册表配置不存在：$ConfigSource"
+  }
+
+  reg import "$ConfigSource" 1>$null 2>$null
+  if ($LASTEXITCODE -eq 0) {
+    return [ordered]@{ fallbackUsed = $false }
+  }
+
+  $tmp = Join-Path $env:TEMP ("wtp-reg-import-{0}.reg" -f ([guid]::NewGuid().ToString('N')))
+  try {
+    $raw = Get-Content -LiteralPath $ConfigSource -Raw -Encoding UTF8
+    [System.IO.File]::WriteAllText($tmp, $raw, [System.Text.Encoding]::Unicode)
+    reg import "$tmp" 1>$null 2>$null
+    if ($LASTEXITCODE -ne 0) {
+      throw "reg import 返回退出码：$LASTEXITCODE"
+    }
+    return [ordered]@{ fallbackUsed = $true }
+  }
+  finally {
+    if (Test-Path -LiteralPath $tmp) {
+      Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
+
+# Nexus 已知可执行路径（不同安装器可能写到 Program Files 或 Program Files (x86)）。
+function Get-NexusExecutablePath {
+  $candidates = @(
+    (Join-Path $env:ProgramFiles 'Winstep\Nexus.exe'),
+    (Join-Path ${env:ProgramFiles(x86)} 'Winstep\Nexus.exe'),
+    (Join-Path $env:ProgramFiles 'Winstep\Nexus\Nexus.exe'),
+    (Join-Path ${env:ProgramFiles(x86)} 'Winstep\Nexus\Nexus.exe')
+  )
+  foreach ($c in $candidates) {
+    if (-not [string]::IsNullOrWhiteSpace($c) -and (Test-Path -LiteralPath $c)) {
+      return $c
+    }
+  }
+  return ''
+}
+
+# Nexus 安装验真：卸载项或已知可执行路径任一命中即视为已安装。
+function Test-NexusInstalled {
+  $entry = Get-UninstallEntry -Like 'Nexus'
+  if ($entry) { return $true }
+  return -not [string]::IsNullOrWhiteSpace((Get-NexusExecutablePath))
+}

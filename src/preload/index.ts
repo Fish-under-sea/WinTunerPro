@@ -4,6 +4,7 @@ import {
   HARDWARE_CHANNELS,
   GPU_CHANNELS,
   OEM_CHANNELS,
+  OPTIMIZATION_CHANNELS,
   POWER_CHANNELS,
   REINSTALL_CHANNELS,
   BEAUTIFY_CHANNELS,
@@ -29,9 +30,13 @@ const api: ElectronAPI = {
 
   // gpu
   detectGpu: () => ipcRenderer.invoke(GPU_CHANNELS.DETECT),
+  listGpuTweakOptions: () => ipcRenderer.invoke(GPU_CHANNELS.LIST_TWEAK_OPTIONS),
+  applyGpuTweaks: (optionIds) => ipcRenderer.invoke(GPU_CHANNELS.APPLY_TWEAKS, optionIds),
+  applyNvidiaPreset: (presetId) => ipcRenderer.invoke(GPU_CHANNELS.APPLY_NVIDIA_PRESET, presetId),
 
   // oem
   detectOem: () => ipcRenderer.invoke(OEM_CHANNELS.DETECT),
+  applyOemMode: (mode) => ipcRenderer.invoke(OEM_CHANNELS.APPLY_MODE, mode),
 
   // power
   getPowerState: () => ipcRenderer.invoke(POWER_CHANNELS.GET_STATE),
@@ -64,6 +69,10 @@ const api: ElectronAPI = {
   applyStaticWallpaper: (id) => ipcRenderer.invoke(WALLPAPER_CHANNELS.APPLY_STATIC, id),
   detectWallpaperEngine: () => ipcRenderer.invoke(WALLPAPER_CHANNELS.DETECT_ENGINE),
   guideInstallWallpaperEngine: () => ipcRenderer.invoke(WALLPAPER_CHANNELS.GUIDE_INSTALL_ENGINE),
+
+  // optimization
+  scanOptimizations: (itemIds) => ipcRenderer.invoke(OPTIMIZATION_CHANNELS.SCAN, itemIds),
+  applyOptimizations: (itemIds) => ipcRenderer.invoke(OPTIMIZATION_CHANNELS.APPLY, itemIds),
 }
 
 // contextIsolation 开启时通过 contextBridge 注入；否则兜底挂到 window（仅防御性处理）

@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { PageHeader, SectionCard, Card, Tag, Switch, Button } from '@renderer/components/ui'
 import type { TagTone } from '@renderer/components/ui'
 import { Icon } from '@renderer/components/icons'
 import type { IconName } from '@renderer/components/icons'
-import { toast } from '@renderer/store/toastStore'
+import { getRecommendedOptimizationItems, useOptimizationStore } from '@renderer/store/optimizationStore'
+import type { OptimizationItemId } from '@shared/types'
 
 type Risk = 'low' | 'mid' | 'high'
 
@@ -167,7 +168,22 @@ const RISK_META: Record<Risk, { label: string; tone: TagTone }> = {
   high: { label: '高风险', tone: 'danger' },
 }
 
+const SCAN_STATUS_META: Record<
+  'recommended' | 'optimized' | 'unimplemented' | 'unavailable',
+  { label: string; tone: TagTone }
+> = {
+  recommended: { label: '建议优化', tone: 'warning' },
+  optimized: { label: '已优化', tone: 'success' },
+  unimplemented: { label: '未实现', tone: 'neutral' },
+  unavailable: { label: '不可用', tone: 'danger' },
+}
+
+const ALL_ITEM_IDS: OptimizationItemId[] = CATEGORIES.flatMap((cat) =>
+  cat.items.map((item) => item.id as OptimizationItemId),
+)
+
 export function OptimizationPage(): React.JSX.Element {
+  const { scan, apply, scanning, applying, scanResults, applyResults } = useOptimizationStore()
   const [state, setState] = useState<Record<string, boolean>>(() => {
     const init: Record<string, boolean> = {}
     for (const cat of CATEGORIES) for (const item of cat.items) init[item.id] = item.defaultOn
@@ -176,33 +192,65 @@ export function OptimizationPage(): React.JSX.Element {
   const [expertOpen, setExpertOpen] = useState<Record<string, boolean>>({})
 
   const selectedCount = useMemo(() => Object.values(state).filter(Boolean).length, [state])
+  const selectedItems = useMemo(
+    () => Object.entries(state).filter(([, v]) => v).map(([id]) => id as OptimizationItemId),
+    [state],
+  )
 
   const toggle = (id: string, v: boolean): void => setState((p) => ({ ...p, [id]: v }))
+
+  useEffect(() => {
+    if (!scanResults) return
+    const recommended = new Set(getRecommendedOptimizationItems(scanResults))
+    setState((prev) => {
+      const next: Record<string, boolean> = {}
+      for (const key of Object.keys(prev)) {
+        next[key] = recommended.has(key as OptimizationItemId)
+      }
+      return next
+    })
+  }, [scanResults])
+
+  const handleScan = (): void => {
+    void scan(ALL_ITEM_IDS)
+  }
+
+  const handleApply = (): void => {
+    const hasScan = Boolean(scanResults)
+    const intro = hasScan
+      ? '即将执行系统优化（会实际修改系统设置）。'
+      : '尚未体检，仍可继续执行优化（会实际修改系统设置）。'
+    const ok = window.confirm(
+      `${intro}\n\n优化会执行白名单写操作（注册表/服务/缓存清理等）。\n请确认你已知晓风险并继续。`,
+    )
+    if (!ok) return
+    void apply(selectedItems)
+  }
 
   return (
     <div>
       <PageHeader
         icon="zap"
         title="系统优化"
-        description="勾选即生效的系统优化项，按分区组织。危险项默认折叠，所有写系统操作前会自动建立还原点。"
+        description="先体检再优化：体检只读取状态不会修改系统，优化会执行真实写入操作。"
         action={
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
               size="sm"
               leftIcon="shield"
-              onClick={() => toast.info('一键体检将在后续版本上线')}
+              loading={scanning}
+              onClick={handleScan}
             >
-              一键体检
+              开始体检
             </Button>
             <Button
               size="sm"
               leftIcon="zap"
-              onClick={() =>
-                toast.info('优化执行将在后续版本上线', `已选择 ${selectedCount} 项优化`)
-              }
+              loading={applying}
+              onClick={handleApply}
             >
-              一键优化
+              执行优化
             </Button>
           </div>
         }
@@ -211,8 +259,8 @@ export function OptimizationPage(): React.JSX.Element {
       <div className="mb-5 flex items-start gap-2.5 rounded-xl border border-info-soft bg-info-soft/50 px-4 py-3 text-xs text-text-muted">
         <Icon name="shield" size={16} className="mt-0.5 shrink-0 text-primary" />
         <span>
-          优化前会自动创建系统还原点，服务与 Appx
-          清理均采用白名单制（仅经过验证的安全项），可随时在「配置备份」中回滚。 当前已选择{' '}
+          「开始体检」仅做只读扫描，不会修改系统；「执行优化」会进行真实系统写入，执行前必须二次确认。
+          当前已选择{' '}
           <span className="font-semibold text-text">{selectedCount}</span> 项。
         </span>
       </div>
@@ -275,6 +323,72 @@ export function OptimizationPage(): React.JSX.Element {
           )
         })}
       </div>
+      {scanResults && (
+        <SectionCard icon="shield" title="体检结果（只读）" description={scanResults.summary} className="mt-5">
+          <div className="space-y-2.5">
+            {scanResults.results.map((item) => {
+              const meta = SCAN_STATUS_META[item.status]
+              return (
+                <Card
+                  key={item.itemId}
+                  padding="sm"
+                  className="flex items-center justify-between gap-3 !rounded-xl !shadow-none"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm text-text">{item.itemId}</p>
+                    <p className="mt-0.5 text-xs text-text-muted">{item.message}</p>
+                    {item.warning && <p className="mt-0.5 text-xs text-warning">{item.warning}</p>}
+                  </div>
+                  <Tag tone={meta.tone}>{meta.label}</Tag>
+                </Card>
+              )
+            })}
+          </div>
+        </SectionCard>
+      )}
+      {applyResults && (
+        <SectionCard
+          icon="list"
+          title="执行结果"
+          description={applyResults.summary}
+          className="mt-5"
+        >
+          <div className="space-y-2.5">
+            {applyResults.results.map((item) => (
+              <Card
+                key={item.itemId}
+                padding="sm"
+                className="flex items-center justify-between gap-3 !rounded-xl !shadow-none"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm text-text">{item.itemId}</p>
+                  <p className="mt-0.5 text-xs text-text-muted">{item.message}</p>
+                  {item.warning && <p className="mt-0.5 text-xs text-warning">{item.warning}</p>}
+                </div>
+                <Tag
+                  tone={
+                    item.status === 'success'
+                      ? 'success'
+                      : item.status === 'unimplemented'
+                        ? 'neutral'
+                        : item.status === 'skipped'
+                          ? 'warning'
+                          : 'danger'
+                  }
+                >
+                  {item.status === 'success'
+                    ? '成功'
+                    : item.status === 'failed'
+                      ? '失败'
+                      : item.status === 'skipped'
+                        ? '已跳过'
+                        : '暂未实现'}
+                </Tag>
+              </Card>
+            ))}
+          </div>
+        </SectionCard>
+      )}
     </div>
   )
 }

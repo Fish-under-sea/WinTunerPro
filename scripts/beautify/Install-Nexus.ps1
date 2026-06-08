@@ -17,6 +17,7 @@ param(
 . (Join-Path $PSScriptRoot '_BeautifyCommon.ps1')
 
 try {
+  $warnings = New-Object System.Collections.Generic.List[string]
   Write-WtProgress -Percent 5 -Stage '准备安装 Nexus'
 
   if ([string]::IsNullOrWhiteSpace($InstallerPath) -or -not (Test-Path -LiteralPath $InstallerPath -PathType Leaf)) {
@@ -28,8 +29,11 @@ try {
   Write-WtProgress -Percent 15 -Stage '正在静默安装（请稍候）'
   $silentArgs = @('/VERYSILENT', '/NORESTART', '/SP-', '/SUPPRESSMSGBOXES')
   $proc = Start-Process -FilePath $InstallerPath -ArgumentList $silentArgs -Wait -PassThru
-  if ($proc.ExitCode -ne 0) {
+  if ($proc.ExitCode -ne 0 -and -not (Test-NexusInstalled)) {
     throw "Nexus 安装器返回非零退出码：$($proc.ExitCode)"
+  }
+  if ($proc.ExitCode -ne 0 -and (Test-NexusInstalled)) {
+    $warnings.Add("安装器返回退出码 $($proc.ExitCode)，但检测到 Nexus 已安装，已按成功处理。")
   }
   Write-WtProgress -Percent 70 -Stage '安装完成，处理配置'
 
@@ -43,9 +47,12 @@ try {
     $ext = [System.IO.Path]::GetExtension($ConfigSource).ToLower()
     if ($ext -eq '.reg') {
       Write-WtProgress -Percent 85 -Stage '备份并导入预置配置'
+      Stop-Process -Name 'Nexus' -Force -ErrorAction SilentlyContinue
       $backup = Backup-RegistryKeyToFile -RegPath 'HKCU\Software\WinSTEP2000' -BackupDir $BackupDir -Tag 'nexus-winstep2000'
-      reg import "$ConfigSource" 1>$null 2>$null
-      if ($LASTEXITCODE -ne 0) { throw 'Nexus 配置（.reg）导入失败' }
+      $importResult = Import-RegistryFileRobust -ConfigSource $ConfigSource
+      if ($importResult.fallbackUsed) {
+        $warnings.Add('检测到注册表文件编码兼容性问题，已自动转码后导入。')
+      }
       $configImported = $true
     }
     else {
@@ -54,10 +61,21 @@ try {
   }
 
   Write-WtProgress -Percent 100 -Stage 'Nexus 安装完成'
+  $nexusExe = Get-NexusExecutablePath
+  if (-not [string]::IsNullOrWhiteSpace($nexusExe)) {
+    try {
+      Start-Process -FilePath $nexusExe -ErrorAction SilentlyContinue | Out-Null
+    }
+    catch {
+      $warnings.Add("配置导入后自动重启 Nexus 失败：$($_.Exception.Message)")
+    }
+  }
+
   Write-WtResult -Ok $true -Data ([ordered]@{
       installedBy    = 'offline-exe'
       configImported = $configImported
       backup         = $backup
+      warnings       = @($warnings)
     })
 }
 catch {

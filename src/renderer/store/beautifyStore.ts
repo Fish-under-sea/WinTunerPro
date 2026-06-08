@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { BeautifyStatus, InstallProgress } from '@shared/types'
+import type { BeautifyStatus, InstallProgress, NexusInstallResult } from '@shared/types'
 import { errorMessage } from '@renderer/lib/async'
 import { toast } from './toastStore'
 
@@ -24,6 +24,21 @@ interface BeautifyStore {
   installTranslucentTB: () => Promise<void>
   installNexus: () => Promise<void>
   applyTheme: (themeId: string) => Promise<void>
+}
+
+export function getNexusInstallFeedback(result: NexusInstallResult): {
+  tone: 'success' | 'warning'
+  title: string
+  description?: string
+} {
+  if (result.configImported) {
+    return { tone: 'success', title: 'Nexus 安装完成' }
+  }
+  return {
+    tone: 'warning',
+    title: 'Nexus 已安装，但配置未导入',
+    description: '可更换 .reg 配置后重试安装',
+  }
 }
 
 export const useBeautifyStore = create<BeautifyStore>((set, get) => {
@@ -77,8 +92,13 @@ export const useBeautifyStore = create<BeautifyStore>((set, get) => {
         progress: { ...s.progress, nexus: { tool: 'nexus', percent: 0, stage: '准备中' } },
       }))
       try {
-        await window.electronAPI.installNexus()
-        toast.success('Nexus 安装完成')
+        const result = await window.electronAPI.installNexus()
+        const feedback = getNexusInstallFeedback(result)
+        if (feedback.tone === 'success') toast.success(feedback.title, feedback.description)
+        else toast.warning(feedback.title, feedback.description)
+        if (result.warnings && result.warnings.length > 0) {
+          toast.warning('Nexus 安装告警', result.warnings.join('；'))
+        }
         await get().load(true)
       } catch (err) {
         toast.error('安装 Nexus 失败', errorMessage(err))

@@ -27,12 +27,28 @@ export const HARDWARE_CHANNELS = {
 export const GPU_CHANNELS = {
   /** 检测显卡 */
   DETECT: 'gpu:detect',
+  /** 列出可调节项 */
+  LIST_TWEAK_OPTIONS: 'gpu:list-tweak-options',
+  /** 批量执行调节项 */
+  APPLY_TWEAKS: 'gpu:apply-tweaks',
+  /** 应用 NVIDIA 预设 */
+  APPLY_NVIDIA_PRESET: 'gpu:apply-nvidia-preset',
 } as const
 
 /** oem 模块通道——机箱判定与品牌识别（只读） */
 export const OEM_CHANNELS = {
   /** 检测机箱类型与 OEM 品牌 */
   DETECT: 'oem:detect',
+  /** 应用 OEM 性能模式 */
+  APPLY_MODE: 'oem:apply-mode',
+} as const
+
+/** optimization 模块通道——系统优化白名单执行 */
+export const OPTIMIZATION_CHANNELS = {
+  /** 体检优化项（只读扫描） */
+  SCAN: 'optimization:scan',
+  /** 按白名单执行优化项 */
+  APPLY: 'optimization:apply',
 } as const
 
 /** power 模块通道——电源计划 */
@@ -101,6 +117,7 @@ export type IpcChannel = Exclude<
   | (typeof HARDWARE_CHANNELS)[keyof typeof HARDWARE_CHANNELS]
   | (typeof GPU_CHANNELS)[keyof typeof GPU_CHANNELS]
   | (typeof OEM_CHANNELS)[keyof typeof OEM_CHANNELS]
+  | (typeof OPTIMIZATION_CHANNELS)[keyof typeof OPTIMIZATION_CHANNELS]
   | (typeof POWER_CHANNELS)[keyof typeof POWER_CHANNELS]
   | (typeof REINSTALL_CHANNELS)[keyof typeof REINSTALL_CHANNELS]
   | (typeof BEAUTIFY_CHANNELS)[keyof typeof BEAUTIFY_CHANNELS]
