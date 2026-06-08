@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * WinTuner Pro 设计系统 —— 浅色·现代清爽风。
+ *
+ * 设计目标：白/浅灰底、清爽蓝青主色、充足留白、圆角、轻投影，
+ * 像高品质消费级桌面 App，亲和力强、零门槛。
+ *
+ * 所有视觉 token 集中在 :root，组件通过 tailwind.config.js 映射的工具类引用
+ * （如 bg-bg / text-primary / border-border），后续切换风格包只需改这里的变量。
+ */
+:root {
+  /* —— 背景与表面层次 —— */
+  --color-bg: #f4f7fb; /* 应用底色：极浅蓝灰 */
+  --color-surface: #ffffff; /* 卡片/面板主表面 */
+  --color-surface-2: #f7f9fc; /* 次级表面（内嵌区块/表头） */
+  --color-surface-hover: #eef3fa; /* 可交互项悬浮底色 */
+
+  /* —— 边框 —— */
+  --color-border: #e4e9f2; /* 常规边框（浅色下保证可见） */
+  --color-border-strong: #cdd6e4; /* 强调边框/分隔线 */
+
+  /* —— 主色（清爽蓝青系） —— */
+  --color-primary: #0ea5e9; /* sky-500，主操作色 */
+  --color-primary-hover: #0284c7; /* sky-600，悬浮/按下 */
+  --color-primary-soft: #e0f2fe; /* sky-100，浅色主色背景 */
+  --color-primary-contrast: #ffffff; /* 主色上的文字色 */
+
+  /* —— 文本（保证 4.5:1 对比度） —— */
+  --color-text: #0f172a; /* slate-900，正文主色 */
+  --color-text-muted: #475569; /* slate-600，次要文本 */
+  --color-text-subtle: #94a3b8; /* slate-400，仅用于装饰性/极弱说明 */
+
+  /* —— 语义色 —— */
+  --color-success: #16a34a; /* green-600 */
+  --color-success-soft: #dcfce7; /* green-100 */
+  --color-warning: #d97706; /* amber-600 */
+  --color-warning-soft: #fef3c7; /* amber-100 */
+  --color-danger: #dc2626; /* red-600 */
+  --color-danger-soft: #fee2e2; /* red-100 */
+  --color-info: #0ea5e9; /* 与主色一致 */
+  --color-info-soft: #e0f2fe;
+
+  /* —— 字体栈（中文友好，优先无衬线系统字体） —— */
+  --font-sans: 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', 'Hiragino Sans GB',
+    'Source Han Sans SC', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Cascadia Code', 'Consolas', 'JetBrains Mono', ui-monospace, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* 自定义滚动条：浅色风格下纤细、低存在感 */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: var(--color-border-strong);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: #aab6c8;
+  background-clip: content-box;
+}
+
+/* 统一焦点环：键盘导航可见，符合可访问性要求 */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* 尊重用户的「减少动态效果」偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
