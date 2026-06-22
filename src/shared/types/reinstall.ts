@@ -61,3 +61,42 @@ export interface MachineIdInfo {
   /** 注册表 MachineGuid（仅读取展示） */
   machineGuid: string
 }
+
+/**
+ * 「更改机器码」请求选项（`reinstall:change-machine-id` 入参）。
+ *
+ * 合规边界：仅做合法的机器标识重置（重新生成 MachineGuid），
+ * 不涉及任何硬件指纹（磁盘/网卡/主板/CPU）伪造或反作弊绕过。
+ */
+export interface ChangeMachineIdOptions {
+  /**
+   * 是否一并重置遥测/体验改善标识（HKLM\SOFTWARE\Microsoft\SQMClient\MachineId）。
+   * 默认 false。属更高风险的可选项，仅在用户显式勾选时执行。
+   */
+  resetTelemetryId?: boolean
+}
+
+/**
+ * 「更改机器码」执行结果（`reinstall:change-machine-id` 返回结构）。
+ * 写操作前已自动备份相关注册表键到 .reg 快照，backupPath 即可用于一键还原。
+ */
+export interface ChangeMachineIdResult {
+  /** 是否成功改写 MachineGuid */
+  success: boolean
+  /** 旧的 MachineGuid（用于展示/比对） */
+  oldMachineGuid: string
+  /** 新写入的 MachineGuid */
+  newMachineGuid: string
+  /** 是否实际重置了遥测 MachineId */
+  telemetryReset: boolean
+  /** 旧的遥测 MachineId（仅在请求重置时有值） */
+  oldTelemetryId?: string
+  /** 新写入的遥测 MachineId（仅在实际重置时有值） */
+  newTelemetryId?: string
+  /** 写前注册表备份 .reg 的完整路径（可用于一键还原） */
+  backupPath: string
+  /** 是否需要重启后才能对多数依赖方完全生效 */
+  requiresRestart: boolean
+  /** 过程中的告警（人话，可直接展示） */
+  warnings: string[]
+}

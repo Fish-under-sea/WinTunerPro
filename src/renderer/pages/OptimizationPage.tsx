@@ -3,7 +3,10 @@ import { PageHeader, SectionCard, Card, Tag, Switch, Button } from '@renderer/co
 import type { TagTone } from '@renderer/components/ui'
 import { Icon } from '@renderer/components/icons'
 import type { IconName } from '@renderer/components/icons'
-import { getRecommendedOptimizationItems, useOptimizationStore } from '@renderer/store/optimizationStore'
+import {
+  getRecommendedOptimizationItems,
+  useOptimizationStore,
+} from '@renderer/store/optimizationStore'
 import type { OptimizationItemId } from '@shared/types'
 
 type Risk = 'low' | 'mid' | 'high'
@@ -60,9 +63,9 @@ const CATEGORIES: OptCategory[] = [
       {
         id: 'winsxs',
         name: 'WinSxS 组件清理',
-        desc: '清理已被取代的旧版系统组件',
+        desc: '清理已被取代的旧版系统组件（高级项，耗时较长，暂未启用）',
         risk: 'mid',
-        defaultOn: true,
+        defaultOn: false,
       },
       {
         id: 'resetbase',
@@ -82,9 +85,9 @@ const CATEGORIES: OptCategory[] = [
       {
         id: 'startup',
         name: '精简开机启动项',
-        desc: '禁用拖慢开机的非必要自启程序',
+        desc: '建议在任务管理器中手动确认（本工具仅提示，不自动禁用）',
         risk: 'low',
-        defaultOn: true,
+        defaultOn: false,
       },
       {
         id: 'diagtrack',
@@ -133,28 +136,28 @@ const CATEGORIES: OptCategory[] = [
   },
   {
     id: 'appx',
-    title: 'Appx 应用清理',
+    title: '后台组件与推送精简',
     icon: 'trash',
-    description: '按白名单卸载内置冗余应用（仅安全项，禁止全选）。',
+    description: '关闭非必要的后台服务、推送与小组件（均可逆，写入前自动备份）。',
     items: [
       {
         id: 'xbox',
-        name: 'Xbox 游戏录制组件',
-        desc: '卸载 Xbox Game Bar 等组件',
+        name: 'Xbox 后台服务与录制',
+        desc: '禁用 Xbox 后台服务并关闭游戏录制（GameDVR）',
         risk: 'mid',
         defaultOn: false,
       },
       {
         id: 'news',
-        name: '资讯与天气',
-        desc: '卸载内置资讯磁贴应用',
+        name: '资讯与兴趣 / 小组件',
+        desc: '关闭任务栏资讯与兴趣、Win11 小组件',
         risk: 'low',
         defaultOn: false,
       },
       {
         id: 'tips',
-        name: '使用技巧（Tips）',
-        desc: '卸载系统提示应用',
+        name: '系统建议与小贴士',
+        desc: '关闭系统提示、建议与锁屏推荐推送',
         risk: 'low',
         defaultOn: false,
       },
@@ -193,7 +196,10 @@ export function OptimizationPage(): React.JSX.Element {
 
   const selectedCount = useMemo(() => Object.values(state).filter(Boolean).length, [state])
   const selectedItems = useMemo(
-    () => Object.entries(state).filter(([, v]) => v).map(([id]) => id as OptimizationItemId),
+    () =>
+      Object.entries(state)
+        .filter(([, v]) => v)
+        .map(([id]) => id as OptimizationItemId),
     [state],
   )
 
@@ -244,12 +250,7 @@ export function OptimizationPage(): React.JSX.Element {
             >
               开始体检
             </Button>
-            <Button
-              size="sm"
-              leftIcon="zap"
-              loading={applying}
-              onClick={handleApply}
-            >
+            <Button size="sm" leftIcon="zap" loading={applying} onClick={handleApply}>
               执行优化
             </Button>
           </div>
@@ -260,8 +261,7 @@ export function OptimizationPage(): React.JSX.Element {
         <Icon name="shield" size={16} className="mt-0.5 shrink-0 text-primary" />
         <span>
           「开始体检」仅做只读扫描，不会修改系统；「执行优化」会进行真实系统写入，执行前必须二次确认。
-          当前已选择{' '}
-          <span className="font-semibold text-text">{selectedCount}</span> 项。
+          当前已选择 <span className="font-semibold text-text">{selectedCount}</span> 项。
         </span>
       </div>
 
@@ -324,7 +324,12 @@ export function OptimizationPage(): React.JSX.Element {
         })}
       </div>
       {scanResults && (
-        <SectionCard icon="shield" title="体检结果（只读）" description={scanResults.summary} className="mt-5">
+        <SectionCard
+          icon="shield"
+          title="体检结果（只读）"
+          description={scanResults.summary}
+          className="mt-5"
+        >
           <div className="space-y-2.5">
             {scanResults.results.map((item) => {
               const meta = SCAN_STATUS_META[item.status]

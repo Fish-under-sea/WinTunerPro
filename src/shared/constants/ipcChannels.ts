@@ -67,6 +67,8 @@ export const REINSTALL_CHANNELS = {
   IMPORT_ISO: 'reinstall:import-iso',
   /** 读取机器码（只读展示） */
   GET_MACHINE_ID: 'reinstall:get-machine-id',
+  /** 更改机器码（写：重新生成 MachineGuid，写前自动备份，可回滚） */
+  CHANGE_MACHINE_ID: 'reinstall:change-machine-id',
   /** 触发系统部署（invoke；本期为演示流水线，不做真实落地） */
   DEPLOY: 'reinstall:deploy',
   /** 部署进度事件（main→renderer 单向推送） */
@@ -99,6 +101,22 @@ export const WALLPAPER_CHANNELS = {
   GUIDE_INSTALL_ENGINE: 'wallpaper:guide-install-engine',
 } as const
 
+/** backup 模块通道——配置备份与迁移（注册表快照 / .wtp 档案） */
+export const BACKUP_CHANNELS = {
+  /** 列出真实备份历史（只读，枚举 backups 目录） */
+  LIST: 'backup:list',
+  /** 创建注册表快照（写：导出应用相关注册表键到 .reg） */
+  CREATE_SNAPSHOT: 'backup:create-snapshot',
+  /** 还原指定备份（写：reg import；还原前自动安全快照） */
+  RESTORE: 'backup:restore',
+  /** 删除指定备份记录（仅删除 backups 目录内自有文件） */
+  DELETE: 'backup:delete',
+  /** 导出当前配置为 .wtp 档案（写：弹保存对话框） */
+  EXPORT_WTP: 'backup:export-wtp',
+  /** 导入 .wtp 档案（写：弹选择对话框，回写配置/导入注册表） */
+  IMPORT_WTP: 'backup:import-wtp',
+} as const
+
 /**
  * main→renderer 单向推送（事件）通道名，不参与 invoke 的 handler 注册约束，
  * 因此从下方的 IpcChannel 联合类型中排除。
@@ -121,6 +139,7 @@ export type IpcChannel = Exclude<
   | (typeof POWER_CHANNELS)[keyof typeof POWER_CHANNELS]
   | (typeof REINSTALL_CHANNELS)[keyof typeof REINSTALL_CHANNELS]
   | (typeof BEAUTIFY_CHANNELS)[keyof typeof BEAUTIFY_CHANNELS]
-  | (typeof WALLPAPER_CHANNELS)[keyof typeof WALLPAPER_CHANNELS],
+  | (typeof WALLPAPER_CHANNELS)[keyof typeof WALLPAPER_CHANNELS]
+  | (typeof BACKUP_CHANNELS)[keyof typeof BACKUP_CHANNELS],
   IpcEventChannel
 >

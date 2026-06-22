@@ -3,8 +3,8 @@ import { NAV_ITEMS } from '@renderer/navConfig'
 
 // 脚手架自检：导航配置作为路由与侧边栏的单一来源，路径必须唯一。
 describe('navConfig', () => {
-  it('包含九个页面项', () => {
-    expect(NAV_ITEMS).toHaveLength(9)
+  it('包含全部十个页面项', () => {
+    expect(NAV_ITEMS).toHaveLength(10)
   })
 
   it('所有路由路径互不重复', () => {

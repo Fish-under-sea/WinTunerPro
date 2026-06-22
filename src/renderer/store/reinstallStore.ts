@@ -4,6 +4,8 @@ import type {
   MachineIdInfo,
   IsoValidationResult,
   ReinstallProgress,
+  ChangeMachineIdOptions,
+  ChangeMachineIdResult,
 } from '@shared/types'
 import { errorMessage } from '@renderer/lib/async'
 import { toast } from './toastStore'
@@ -26,10 +28,18 @@ interface ReinstallStore {
   deploying: boolean
   /** 部署进度（null 表示尚未开始/已重置） */
   deployProgress: ReinstallProgress | null
+  /** 是否正在更改机器码（写操作进行中） */
+  changingMachineId: boolean
+  /** 最近一次「更改机器码」结果（null 表示尚未执行/已清空） */
+  lastMachineIdChange: ChangeMachineIdResult | null
   load: (force?: boolean) => Promise<void>
   importIso: (path: string) => Promise<void>
   startDeploy: (sourceId: string) => Promise<void>
   resetDeploy: () => void
+  /** 更改机器码（写操作）；成功后自动刷新机器码展示 */
+  changeMachineId: (options?: ChangeMachineIdOptions) => Promise<ChangeMachineIdResult | null>
+  /** 清空上次更改机器码的结果 */
+  clearMachineIdChange: () => void
 }
 
 export const useReinstallStore = create<ReinstallStore>((set, get) => {
@@ -48,6 +58,8 @@ export const useReinstallStore = create<ReinstallStore>((set, get) => {
     lastImport: null,
     deploying: false,
     deployProgress: null,
+    changingMachineId: false,
+    lastMachineIdChange: null,
     load: async (force = false) => {
       const { loading, loaded } = get()
       if (loading) return
@@ -93,5 +105,32 @@ export const useReinstallStore = create<ReinstallStore>((set, get) => {
       }
     },
     resetDeploy: () => set({ deploying: false, deployProgress: null }),
+    changeMachineId: async (options) => {
+      if (get().changingMachineId) return null
+      set({ changingMachineId: true })
+      try {
+        const result = await window.electronAPI.changeMachineId(options)
+        set({ lastMachineIdChange: result })
+        if (result.success) {
+          // 改写成功后刷新机器码展示（复用 getMachineId）
+          try {
+            const machineId = await window.electronAPI.getMachineId()
+            set({ machineId })
+          } catch {
+            // 刷新失败不影响主流程，下次进入页面会重新加载
+          }
+          toast.success('机器码已更新', '建议尽快重启以使其完全生效')
+        } else {
+          toast.error('更改机器码未生效', '请查看详情中的告警信息')
+        }
+        return result
+      } catch (err) {
+        toast.error('更改机器码失败', errorMessage(err))
+        return null
+      } finally {
+        set({ changingMachineId: false })
+      }
+    },
+    clearMachineIdChange: () => set({ lastMachineIdChange: null }),
   }
 })

@@ -9,6 +9,7 @@ import {
   REINSTALL_CHANNELS,
   BEAUTIFY_CHANNELS,
   WALLPAPER_CHANNELS,
+  BACKUP_CHANNELS,
 } from '@shared/constants/ipcChannels'
 import type { ElectronAPI } from '@shared/types/api'
 import type { InstallProgress } from '@shared/types/beautify'
@@ -46,6 +47,8 @@ const api: ElectronAPI = {
   listSystemImageSources: () => ipcRenderer.invoke(REINSTALL_CHANNELS.LIST_SOURCES),
   importIso: (path) => ipcRenderer.invoke(REINSTALL_CHANNELS.IMPORT_ISO, path),
   getMachineId: () => ipcRenderer.invoke(REINSTALL_CHANNELS.GET_MACHINE_ID),
+  changeMachineId: (options) =>
+    ipcRenderer.invoke(REINSTALL_CHANNELS.CHANGE_MACHINE_ID, options),
   startReinstallDeploy: (sourceId) => ipcRenderer.invoke(REINSTALL_CHANNELS.DEPLOY, sourceId),
   onReinstallProgress: (cb) => {
     const fn = (_e: unknown, p: ReinstallProgress): void => cb(p)
@@ -73,6 +76,14 @@ const api: ElectronAPI = {
   // optimization
   scanOptimizations: (itemIds) => ipcRenderer.invoke(OPTIMIZATION_CHANNELS.SCAN, itemIds),
   applyOptimizations: (itemIds) => ipcRenderer.invoke(OPTIMIZATION_CHANNELS.APPLY, itemIds),
+
+  // backup
+  listBackups: () => ipcRenderer.invoke(BACKUP_CHANNELS.LIST),
+  createBackupSnapshot: (name) => ipcRenderer.invoke(BACKUP_CHANNELS.CREATE_SNAPSHOT, name),
+  restoreBackup: (id) => ipcRenderer.invoke(BACKUP_CHANNELS.RESTORE, id),
+  deleteBackup: (id) => ipcRenderer.invoke(BACKUP_CHANNELS.DELETE, id),
+  exportWtp: () => ipcRenderer.invoke(BACKUP_CHANNELS.EXPORT_WTP),
+  importWtp: () => ipcRenderer.invoke(BACKUP_CHANNELS.IMPORT_WTP),
 }
 
 // contextIsolation 开启时通过 contextBridge 注入；否则兜底挂到 window（仅防御性处理）

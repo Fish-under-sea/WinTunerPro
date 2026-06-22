@@ -12,6 +12,7 @@ import {
   Modal,
   InfoList,
   Progress,
+  Switch,
 } from '@renderer/components/ui'
 import type { StepItem, InfoRow } from '@renderer/components/ui'
 import { Icon } from '@renderer/components/icons'
@@ -19,7 +20,6 @@ import type { IconName } from '@renderer/components/icons'
 import type { SystemImageKind } from '@shared/types'
 import { cn } from '@renderer/lib/cn'
 import { formatBytes, orDash } from '@renderer/lib/format'
-import { toast } from '@renderer/store/toastStore'
 
 const STEPS: StepItem[] = [
   { title: '选择系统', description: '挑选安装来源' },
@@ -44,14 +44,34 @@ export function SystemReinstallPage(): React.JSX.Element {
     lastImport,
     deploying,
     deployProgress,
+    changingMachineId,
+    lastMachineIdChange,
     load,
     importIso,
     startDeploy,
     resetDeploy,
+    changeMachineId,
+    clearMachineIdChange,
   } = useReinstallStore()
   const [selected, setSelected] = useState<string | null>(null)
   const [machineModalOpen, setMachineModalOpen] = useState(false)
+  // 二次确认门槛：用户须显式勾选「已了解风险」后才能执行
+  const [acknowledged, setAcknowledged] = useState(false)
+  // 更高风险可选项：是否一并重置遥测标识（SQMClient MachineId）
+  const [resetTelemetry, setResetTelemetry] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // 关闭弹窗时复位表单与上次结果，避免下次打开残留状态
+  const closeMachineModal = (): void => {
+    setMachineModalOpen(false)
+    setAcknowledged(false)
+    setResetTelemetry(false)
+    clearMachineIdChange()
+  }
+
+  const handleConfirmChange = async (): Promise<void> => {
+    await changeMachineId({ resetTelemetryId: resetTelemetry })
+  }
 
   useEffect(() => {
     void load()
@@ -259,7 +279,7 @@ export function SystemReinstallPage(): React.JSX.Element {
           <SectionCard
             icon="fingerprint"
             title="更改机器码"
-            description="查看本机的机器标识（MachineGuid / SID），可用于批量部署后的去重。"
+            description="重新生成本机的 MachineGuid（等价于重装/重置后获得的新系统标识），用于批量部署后的去重。"
             action={
               <Button
                 variant="outline"
@@ -275,7 +295,8 @@ export function SystemReinstallPage(): React.JSX.Element {
             <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-warning-soft bg-warning-soft/40 px-4 py-3 text-xs text-text-muted">
               <Icon name="shieldAlert" size={16} className="mt-0.5 shrink-0 text-warning" />
               <span>
-                更改机器码会影响依赖机器标识的软件授权与激活状态，属高风险操作。落地前会强制备份并二次确认。
+                更改机器码会影响依赖机器标识的软件授权与激活状态，属高风险操作，且需重启后完全生效。落地前会强制备份注册表（生成可一键还原的
+                .reg），并需二次确认。仅重置软件层标识，不涉及任何硬件信息。
               </span>
             </div>
           </SectionCard>
@@ -284,30 +305,132 @@ export function SystemReinstallPage(): React.JSX.Element {
 
       <Modal
         open={machineModalOpen}
-        onClose={() => setMachineModalOpen(false)}
+        onClose={closeMachineModal}
         title="更改机器码"
-        description="此操作将在后续版本提供，届时会自动备份原机器码并支持一键还原。"
+        description={
+          lastMachineIdChange?.success
+            ? '机器码已重新生成，原值已备份为 .reg，可随时一键还原。'
+            : '将为本机重新生成 MachineGuid。操作前会自动备份原注册表值，可回滚。'
+        }
         footer={
-          <>
-            <Button variant="ghost" onClick={() => setMachineModalOpen(false)}>
-              取消
-            </Button>
-            <Button
-              variant="danger"
-              onClick={() => {
-                toast.info('更改机器码将在后续版本上线', '当前为入口与风险提示设计')
-                setMachineModalOpen(false)
-              }}
-            >
-              我已了解风险
-            </Button>
-          </>
+          lastMachineIdChange?.success ? (
+            <Button onClick={closeMachineModal}>完成</Button>
+          ) : (
+            <>
+              <Button variant="ghost" onClick={closeMachineModal} disabled={changingMachineId}>
+                取消
+              </Button>
+              <Button
+                variant="danger"
+                disabled={!acknowledged || changingMachineId}
+                loading={changingMachineId}
+                onClick={() => void handleConfirmChange()}
+              >
+                确认更改机器码
+              </Button>
+            </>
+          )
         }
       >
-        <div className="flex items-start gap-2.5 rounded-xl bg-danger-soft px-4 py-3 text-sm text-danger">
-          <Icon name="alert" size={18} className="mt-0.5 shrink-0" />
-          <span>更改机器码可能导致部分软件需要重新授权，请确认已知晓风险后再继续。</span>
-        </div>
+        {lastMachineIdChange?.success ? (
+          <div className="space-y-3">
+            <div className="flex items-start gap-2.5 rounded-xl bg-success-soft px-4 py-3 text-sm text-success">
+              <Icon name="checkCircle" size={18} className="mt-0.5 shrink-0" />
+              <span>机器码已成功更新，请尽快重启电脑以使其对所有软件完全生效。</span>
+            </div>
+            <InfoList
+              rows={[
+                {
+                  label: '原 MachineGuid',
+                  value: (
+                    <span className="font-mono text-xs break-all">
+                      {orDash(lastMachineIdChange.oldMachineGuid)}
+                    </span>
+                  ),
+                },
+                {
+                  label: '新 MachineGuid',
+                  value: (
+                    <span className="font-mono text-xs break-all text-text">
+                      {orDash(lastMachineIdChange.newMachineGuid)}
+                    </span>
+                  ),
+                },
+                ...(lastMachineIdChange.telemetryReset
+                  ? [
+                      {
+                        label: '遥测 MachineId',
+                        value: (
+                          <span className="font-mono text-xs break-all">
+                            {orDash(lastMachineIdChange.newTelemetryId)}
+                          </span>
+                        ),
+                      },
+                    ]
+                  : []),
+              ]}
+            />
+            <div className="rounded-xl border border-border bg-surface-2 px-4 py-3 text-xs text-text-muted">
+              <div className="mb-1 font-medium text-text">备份文件（用于一键还原）</div>
+              <span className="font-mono break-all">{orDash(lastMachineIdChange.backupPath)}</span>
+            </div>
+            {lastMachineIdChange.warnings.length > 0 && (
+              <div className="flex items-start gap-2.5 rounded-xl border border-warning-soft bg-warning-soft/40 px-4 py-3 text-xs text-text-muted">
+                <Icon name="alert" size={16} className="mt-0.5 shrink-0 text-warning" />
+                <ul className="list-disc space-y-1 pl-4">
+                  {lastMachineIdChange.warnings.map((w, i) => (
+                    <li key={i}>{w}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex items-start gap-2.5 rounded-xl bg-danger-soft px-4 py-3 text-sm text-danger">
+              <Icon name="alert" size={18} className="mt-0.5 shrink-0" />
+              <span>
+                更改机器码可能导致部分软件（如已激活的付费软件）需要重新授权，且需<span className="font-semibold">
+                  重启
+                </span>
+                后才能完全生效。操作仅重置软件层注册表标识，不会修改任何硬件信息。
+              </span>
+            </div>
+
+            <div className="flex items-start gap-2.5 rounded-xl border border-border bg-surface-2 px-4 py-3 text-xs text-text-muted">
+              <Icon name="shield" size={16} className="mt-0.5 shrink-0 text-primary" />
+              <span>
+                执行前会自动把原注册表值导出为 .reg 备份（落在 备份目录），如需恢复可在「配置备份」中还原。
+              </span>
+            </div>
+
+            <label className="flex items-center justify-between rounded-xl border border-border px-4 py-3">
+              <span className="pr-4 text-sm text-text">
+                同时重置遥测标识（SQMClient MachineId）
+                <span className="mt-0.5 block text-xs text-text-subtle">
+                  更高风险的可选项，不确定时建议保持关闭
+                </span>
+              </span>
+              <Switch
+                checked={resetTelemetry}
+                onChange={setResetTelemetry}
+                disabled={changingMachineId}
+                label="同时重置遥测标识"
+              />
+            </label>
+
+            <label className="flex cursor-pointer items-center gap-2.5 text-sm text-text">
+              <input
+                type="checkbox"
+                checked={acknowledged}
+                disabled={changingMachineId}
+                onChange={(e) => setAcknowledged(e.target.checked)}
+                className="h-4 w-4 cursor-pointer accent-danger"
+              />
+              我已了解上述风险，并确认继续更改机器码
+            </label>
+          </div>
+        )}
       </Modal>
     </div>
   )

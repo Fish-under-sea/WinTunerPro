@@ -167,6 +167,179 @@ function Ensure-UltimatePowerPlan {
   return [ordered]@{ guid = $targetGuid; name = $targetName }
 }
 
+# ===== 以下为低风险注册表/服务类优化项的公共辅助（telemetry/diagtrack/ceip/autoplay/xbox/news/tips） =====
+
+function Get-RegValueOrNull {
+  param([string]$Path, [string]$Name)
+  try {
+    return (Get-ItemProperty -Path $Path -Name $Name -ErrorAction Stop).$Name
+  } catch {
+    return $null
+  }
+}
+
+function Set-RegDwordWithBackup {
+  param(
+    [string]$Path,            # PowerShell 形式（HKCU:\... / HKLM:\...）
+    [string]$RegExportPath,   # reg.exe 形式（HKCU\... / HKLM\...），用于备份
+    [string]$Name,
+    [int]$Value,
+    [System.Collections.Generic.List[string]]$Warnings
+  )
+  if (Test-Path $Path) {
+    try {
+      $b = Backup-RegistryKey -KeyPath $RegExportPath
+      $Warnings.Add("已备份注册表：$b")
+    } catch {
+      $Warnings.Add("注册表备份失败（$RegExportPath）：$($_.Exception.Message)")
+    }
+  } else {
+    New-Item -Path $Path -Force | Out-Null
+  }
+  Set-ItemProperty -Path $Path -Name $Name -Value $Value -Type DWord
+}
+
+# CEIP 相关计划任务路径
+$script:CEIP_TASKS = @(
+  '\Microsoft\Windows\Customer Experience Improvement Program\Consolidator',
+  '\Microsoft\Windows\Customer Experience Improvement Program\UsbCeip',
+  '\Microsoft\Windows\Customer Experience Improvement Program\KernelCeipTask'
+)
+# Xbox 相关服务
+$script:XBOX_SERVICES = @('XblAuthManager', 'XblGameSave', 'XboxNetApiSvc', 'XboxGipSvc')
+
+function Test-AllServicesDisabled {
+  param([string[]]$Names)
+  foreach ($n in $Names) {
+    $s = Get-Service -Name $n -ErrorAction SilentlyContinue
+    if ($s) {
+      $st = (Get-CimInstance -ClassName Win32_Service -Filter "Name='$n'" -ErrorAction SilentlyContinue).StartMode
+      if ($st -and $st -ne 'Disabled') { return $false }
+    }
+  }
+  return $true
+}
+
+function Disable-ServicesByName {
+  param([string[]]$Names, [System.Collections.Generic.List[string]]$Warnings)
+  foreach ($n in $Names) {
+    $s = Get-Service -Name $n -ErrorAction SilentlyContinue
+    if (-not $s) { continue }
+    try {
+      if ($s.Status -ne 'Stopped') { Stop-Service -Name $n -Force -ErrorAction SilentlyContinue }
+      Set-Service -Name $n -StartupType Disabled -ErrorAction Stop
+    } catch {
+      $Warnings.Add("服务 $n 禁用失败：$($_.Exception.Message)")
+    }
+  }
+}
+
+function Scan-OptItem {
+  param([string]$Item)
+  switch ($Item) {
+    'telemetry' {
+      $v = Get-RegValueOrNull 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection' 'AllowTelemetry'
+      if ($null -ne $v -and [int]$v -eq 0) { return @{ status = 'optimized'; message = '遥测已设为最低（策略生效）' } }
+      return @{ status = 'recommended'; message = '建议将系统遥测降到最低' }
+    }
+    'diagtrack' {
+      $s = Get-Service -Name 'DiagTrack' -ErrorAction SilentlyContinue
+      if (-not $s) { return @{ status = 'optimized'; message = '未发现遥测服务（DiagTrack）' } }
+      $st = (Get-CimInstance -ClassName Win32_Service -Filter "Name='DiagTrack'" -ErrorAction SilentlyContinue).StartMode
+      if ($st -eq 'Disabled') { return @{ status = 'optimized'; message = '遥测服务已禁用' } }
+      return @{ status = 'recommended'; message = '建议禁用遥测服务（DiagTrack）' }
+    }
+    'ceip' {
+      $anyEnabled = $false
+      foreach ($t in $script:CEIP_TASKS) {
+        $tp = Split-Path $t -Parent
+        $tn = Split-Path $t -Leaf
+        $task = Get-ScheduledTask -TaskPath ($tp + '\') -TaskName $tn -ErrorAction SilentlyContinue
+        if ($task -and $task.State -ne 'Disabled') { $anyEnabled = $true }
+      }
+      if ($anyEnabled) { return @{ status = 'recommended'; message = '建议关闭客户体验改善计划任务' } }
+      return @{ status = 'optimized'; message = '客户体验改善计划任务已关闭' }
+    }
+    'autoplay' {
+      $v = Get-RegValueOrNull 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\AutoplayHandlers' 'DisableAutoplay'
+      if ($null -ne $v -and [int]$v -eq 1) { return @{ status = 'optimized'; message = '自动播放已关闭' } }
+      return @{ status = 'recommended'; message = '建议关闭所有媒体的自动播放' }
+    }
+    'xbox' {
+      $svcDisabled = Test-AllServicesDisabled -Names $script:XBOX_SERVICES
+      $dvr = Get-RegValueOrNull 'HKCU:\System\GameConfigStore' 'GameDVR_Enabled'
+      if ($svcDisabled -and ($null -ne $dvr) -and [int]$dvr -eq 0) {
+        return @{ status = 'optimized'; message = 'Xbox 服务与游戏录制已关闭' }
+      }
+      return @{ status = 'recommended'; message = '建议关闭 Xbox 后台服务与游戏录制（GameDVR）' }
+    }
+    'news' {
+      $dsh = Get-RegValueOrNull 'HKLM:\SOFTWARE\Policies\Microsoft\Dsh' 'AllowNewsAndInterests'
+      $feeds = Get-RegValueOrNull 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Feeds' 'EnableFeeds'
+      if ((($null -ne $dsh) -and [int]$dsh -eq 0) -or (($null -ne $feeds) -and [int]$feeds -eq 0)) {
+        return @{ status = 'optimized'; message = '资讯与兴趣/小组件已关闭' }
+      }
+      return @{ status = 'recommended'; message = '建议关闭任务栏资讯与兴趣/小组件' }
+    }
+    'tips' {
+      $v = Get-RegValueOrNull 'HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' 'SubscribedContent-338389Enabled'
+      if (($null -ne $v) -and [int]$v -eq 0) { return @{ status = 'optimized'; message = '系统建议与提示已关闭' } }
+      return @{ status = 'recommended'; message = '建议关闭系统建议与小贴士推送' }
+    }
+    default { return $null }
+  }
+}
+
+function Apply-OptItem {
+  param([string]$Item, [System.Collections.Generic.List[string]]$Warnings)
+  switch ($Item) {
+    'telemetry' {
+      Set-RegDwordWithBackup -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection' -RegExportPath 'HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection' -Name 'AllowTelemetry' -Value 0 -Warnings $Warnings
+      return '已将系统遥测降到最低'
+    }
+    'diagtrack' {
+      Disable-ServicesByName -Names @('DiagTrack', 'dmwappushservice') -Warnings $Warnings
+      return '已禁用遥测相关服务'
+    }
+    'ceip' {
+      foreach ($t in $script:CEIP_TASKS) {
+        $tp = Split-Path $t -Parent
+        $tn = Split-Path $t -Leaf
+        try {
+          Disable-ScheduledTask -TaskPath ($tp + '\') -TaskName $tn -ErrorAction Stop | Out-Null
+        } catch {
+          $Warnings.Add("关闭任务失败（$tn）：$($_.Exception.Message)")
+        }
+      }
+      return '已关闭客户体验改善计划任务'
+    }
+    'autoplay' {
+      Set-RegDwordWithBackup -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\AutoplayHandlers' -RegExportPath 'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\AutoplayHandlers' -Name 'DisableAutoplay' -Value 1 -Warnings $Warnings
+      return '已关闭自动播放'
+    }
+    'xbox' {
+      Disable-ServicesByName -Names $script:XBOX_SERVICES -Warnings $Warnings
+      Set-RegDwordWithBackup -Path 'HKCU:\System\GameConfigStore' -RegExportPath 'HKCU\System\GameConfigStore' -Name 'GameDVR_Enabled' -Value 0 -Warnings $Warnings
+      Set-RegDwordWithBackup -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR' -RegExportPath 'HKCU\Software\Microsoft\Windows\CurrentVersion\GameDVR' -Name 'AppCaptureEnabled' -Value 0 -Warnings $Warnings
+      return '已关闭 Xbox 后台服务与游戏录制'
+    }
+    'news' {
+      Set-RegDwordWithBackup -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Dsh' -RegExportPath 'HKLM\SOFTWARE\Policies\Microsoft\Dsh' -Name 'AllowNewsAndInterests' -Value 0 -Warnings $Warnings
+      Set-RegDwordWithBackup -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Feeds' -RegExportPath 'HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Feeds' -Name 'EnableFeeds' -Value 0 -Warnings $Warnings
+      return '已关闭资讯与兴趣/小组件'
+    }
+    'tips' {
+      $cdm = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager'
+      $cdmExport = 'HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager'
+      Set-RegDwordWithBackup -Path $cdm -RegExportPath $cdmExport -Name 'SubscribedContent-338389Enabled' -Value 0 -Warnings $Warnings
+      Set-ItemProperty -Path $cdm -Name 'SoftLandingEnabled' -Value 0 -Type DWord
+      Set-ItemProperty -Path $cdm -Name 'SystemPaneSuggestionsEnabled' -Value 0 -Type DWord
+      return '已关闭系统建议与小贴士推送'
+    }
+    default { return $null }
+  }
+}
+
 Invoke-WtScript -ErrorCode 'E_OPT' -Body {
   $items = @(Get-RequestedItems -Raw $ItemIds)
   if ($items.Count -eq 0) {
@@ -218,8 +391,22 @@ Invoke-WtScript -ErrorCode 'E_OPT' -Body {
               Add-ScanResult -Bag $results -ItemId $item -Status 'recommended' -Message '建议切换到卓越性能电源计划'
             }
           }
+          'winsxs' {
+            Add-ScanResult -Bag $results -ItemId $item -Status 'unimplemented' -Message '组件清理（WinSxS）耗时较长，已保留为高级项，暂不在常规体检中执行'
+          }
+          'resetbase' {
+            Add-ScanResult -Bag $results -ItemId $item -Status 'unimplemented' -Message 'ResetBase 不可逆（清除组件回滚点），默认不开启'
+          }
+          'startup' {
+            Add-ScanResult -Bag $results -ItemId $item -Status 'unimplemented' -Message '启动项建议在任务管理器中手动确认，暂不自动处置'
+          }
           default {
-            Add-ScanResult -Bag $results -ItemId $item -Status 'unimplemented' -Message '该优化项暂未实现体检逻辑'
+            $scan = Scan-OptItem -Item $item
+            if ($scan) {
+              Add-ScanResult -Bag $results -ItemId $item -Status $scan.status -Message $scan.message
+            } else {
+              Add-ScanResult -Bag $results -ItemId $item -Status 'unimplemented' -Message '该优化项暂未实现体检逻辑'
+            }
           }
         }
       } catch {
@@ -297,8 +484,22 @@ Invoke-WtScript -ErrorCode 'E_OPT' -Body {
           $plan = Ensure-UltimatePowerPlan
           Add-OptResult -Bag $results -ItemId $item -Status 'success' -Message "已切换到电源计划：$($plan.name)"
         }
+        'winsxs' {
+          Add-OptResult -Bag $results -ItemId $item -Status 'unimplemented' -Message '组件清理（WinSxS）为高级项，耗时较长，暂不在常规优化中执行'
+        }
+        'resetbase' {
+          Add-OptResult -Bag $results -ItemId $item -Status 'unimplemented' -Message 'ResetBase 不可逆，默认不开启（保留安全边界）'
+        }
+        'startup' {
+          Add-OptResult -Bag $results -ItemId $item -Status 'unimplemented' -Message '启动项请在任务管理器中手动管理，避免误禁关键项'
+        }
         default {
-          Add-OptResult -Bag $results -ItemId $item -Status 'unimplemented' -Message '该优化项暂未实现'
+          $msg = Apply-OptItem -Item $item -Warnings $warnings
+          if ($msg) {
+            Add-OptResult -Bag $results -ItemId $item -Status 'success' -Message $msg
+          } else {
+            Add-OptResult -Bag $results -ItemId $item -Status 'unimplemented' -Message '该优化项暂未实现'
+          }
         }
       }
     } catch {

@@ -7,6 +7,7 @@ import { registerPowerHandlers } from './powerHandlers'
 import { registerReinstallHandlers } from './reinstallHandlers'
 import { registerBeautifyHandlers } from './beautifyHandlers'
 import { registerWallpaperHandlers } from './wallpaperHandlers'
+import { registerBackupHandlers } from './backupHandlers'
 
 /**
  * IPC 处理器集中注册入口。
@@ -25,4 +26,5 @@ export function registerIpcHandlers(): void {
   registerReinstallHandlers()
   registerBeautifyHandlers()
   registerWallpaperHandlers()
+  registerBackupHandlers()
 }

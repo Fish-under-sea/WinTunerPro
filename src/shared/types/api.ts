@@ -15,10 +15,23 @@ import type {
   IsoValidationResult,
   MachineIdInfo,
   ReinstallProgress,
+  ChangeMachineIdOptions,
+  ChangeMachineIdResult,
 } from './reinstall'
 import type { BeautifyStatus, InstallProgress, NexusInstallResult } from './beautify'
 import type { WallpaperState, WallpaperEngineStatus } from './wallpaper'
-import type { OptimizationApplyResult, OptimizationItemId, OptimizationScanResult } from './optimization'
+import type {
+  OptimizationApplyResult,
+  OptimizationItemId,
+  OptimizationScanResult,
+} from './optimization'
+import type {
+  BackupRecord,
+  CreateSnapshotResult,
+  ExportWtpResult,
+  ImportWtpResult,
+  RestoreResult,
+} from './backup'
 
 /**
  * preload 通过 contextBridge 暴露给渲染进程的白名单 API 契约。
@@ -30,8 +43,9 @@ import type { OptimizationApplyResult, OptimizationItemId, OptimizationScanResul
  * 扩展方式：新增能力时在此追加方法签名，preload 同步实现并经 ipcRenderer.invoke
  * 转发到对应的主进程 handler（通道名取自 src/shared/constants/ipcChannels.ts）。
  *
- * 约定：只读类方法（get/list/detect）当前由 service 返回 mock，便于前端联调；
- * 写操作类方法（set/install/apply/import/guide）当前在 service 抛“未实现”，由功能代理填充真实逻辑。
+ * 现状：各模块均经主进程 service + PowerShell 真实落地（hardware/gpu/oem/power/optimization/
+ * beautify/wallpaper/backup 与 reinstall 的镜像探测/机器码/ISO 校验）。仅 reinstall 的
+ * 真实无人值守部署（startReinstallDeploy）出于安全考虑保留为演示流程，见 reinstallService。
  */
 export interface ElectronAPI {
   /** 获取应用基础信息（版本、平台等） */
@@ -72,6 +86,8 @@ export interface ElectronAPI {
   importIso: (path: string) => Promise<IsoValidationResult>
   /** 读取机器码（只读展示） */
   getMachineId: () => Promise<MachineIdInfo>
+  /** 更改机器码（写操作：重新生成 MachineGuid，写前自动备份，可回滚） */
+  changeMachineId: (options?: ChangeMachineIdOptions) => Promise<ChangeMachineIdResult>
   /** 触发系统部署（本期为演示流水线，不做真实落地）；进度经 onReinstallProgress 推送 */
   startReinstallDeploy: (sourceId: string) => Promise<void>
   /** 订阅部署进度事件，返回取消订阅函数 */
@@ -104,4 +120,18 @@ export interface ElectronAPI {
   scanOptimizations: (itemIds: OptimizationItemId[]) => Promise<OptimizationScanResult>
   /** 执行优化项（写操作，按 itemId 白名单） */
   applyOptimizations: (itemIds: OptimizationItemId[]) => Promise<OptimizationApplyResult>
+
+  // ===== backup：配置备份与迁移 =====
+  /** 列出真实备份历史（只读，枚举 backups 目录） */
+  listBackups: () => Promise<BackupRecord[]>
+  /** 创建注册表配置快照（写操作） */
+  createBackupSnapshot: (name?: string) => Promise<CreateSnapshotResult>
+  /** 还原指定备份（写操作，前置安全快照） */
+  restoreBackup: (id: string) => Promise<RestoreResult>
+  /** 删除指定备份记录（仅限 backups 目录内自有文件） */
+  deleteBackup: (id: string) => Promise<{ success: boolean }>
+  /** 导出当前配置为 .wtp 档案（写操作，弹保存对话框） */
+  exportWtp: () => Promise<ExportWtpResult>
+  /** 导入 .wtp 档案（写操作，弹选择对话框） */
+  importWtp: () => Promise<ImportWtpResult>
 }
