@@ -12,6 +12,9 @@ release/
 *.msi
 *.nsis
 
+# ===== 图标预览模板（本地保留，不入库）=====
+build/_icon_preview*.png
+
 # ===== 日志 =====
 logs/
 *.log
