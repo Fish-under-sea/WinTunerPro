@@ -77,16 +77,14 @@ export const REINSTALL_CHANNELS = {
   DEPLOY_PROGRESS: 'reinstall:deploy-progress',
 } as const
 
-/** beautify 模块通道——TranslucentTB / Nexus / 风格包 */
+/** beautify 模块通道——TranslucentTB / Nexus */
 export const BEAUTIFY_CHANNELS = {
-  /** 读取美化工具与风格包状态 */
+  /** 读取美化工具状态 */
   GET_STATUS: 'beautify:get-status',
   /** 安装 TranslucentTB（写操作） */
   INSTALL_TRANSLUCENTTB: 'beautify:install-translucenttb',
   /** 安装 Nexus（写操作） */
   INSTALL_NEXUS: 'beautify:install-nexus',
-  /** 应用风格包（写操作） */
-  APPLY_THEME: 'beautify:apply-theme',
   /** 以 resources/themes/nexus/wsbackup.wbk 为源对齐 Nexus UI 设置（写操作，忽略快捷方式） */
   APPLY_NEXUS_PRESET: 'beautify:apply-nexus-preset',
   /** 安装进度事件（main→renderer 单向推送） */

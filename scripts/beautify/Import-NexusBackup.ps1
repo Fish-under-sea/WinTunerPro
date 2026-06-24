@@ -2,7 +2,7 @@
 #
 # 本脚本是面向运营/手动场景的 .wbk 入口薄包装：解析/写入逻辑与 .reg 路径同源，
 # 统一收敛在 _BeautifyCommon.ps1 的 Import-NexusConfigFile（按扩展名分流，不再有第二份解析代码）。
-# 程序内（applyTheme）走统一入口 Import-NexusConfig.ps1；本脚本保留是因 .wbk 默认更保守（DryRun）、
+# 程序内（applyNexusUiPreset）走统一入口 Import-NexusConfig.ps1；本脚本保留是因 .wbk 默认更保守（DryRun）、
 # 便于在装有 Nexus 的机器上单独核对 [DOCKS] 落点。
 #
 # 背景与依据（已上机/查证）：

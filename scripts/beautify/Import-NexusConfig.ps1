@@ -1,6 +1,6 @@
 # WinTuner Pro —— 导入 Winstep Nexus 预置配置（统一入口，写操作，与「安装」解耦）
 #
-# 用途：风格包 applyTheme 联动 Nexus，以及后续（P1）已安装态「重新应用预设」入口复用。
+# 用途：Nexus UI 预设（applyNexusUiPreset）对齐界面设置，以及已安装态「重新应用预设」入口复用。
 # 与 Install-Nexus.ps1 的区别：本脚本不安装、只导入；前置要求 Nexus 已安装。
 #
 # 统一两条预设来源（扩展名分流，底层同源于 _BeautifyCommon.ps1 的 Import-NexusConfigFile）：

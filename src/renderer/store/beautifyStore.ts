@@ -1,6 +1,5 @@
 import { create } from 'zustand'
 import type {
-  ApplyThemeResult,
   BeautifyStatus,
   InstallProgress,
   NexusConfigImportResult,
@@ -10,8 +9,8 @@ import { errorMessage } from '@renderer/lib/async'
 import { toast } from './toastStore'
 
 /**
- * 系统美化 store：读取工具与风格包状态（getBeautifyStatus），
- * 安装 TranslucentTB / Nexus、应用风格包（写操作）。
+ * 系统美化 store：读取工具状态（getBeautifyStatus），
+ * 安装 TranslucentTB / Nexus、应用 Nexus UI 预设（写操作）。
  * 安装期间通过 onInstallProgress 订阅主进程推送的进度，按 tool 写入 progress 供 UI 进度条读取。
  */
 type ToolKey = 'translucenttb' | 'nexus'
@@ -43,7 +42,6 @@ interface BeautifyStore {
   load: (force?: boolean) => Promise<void>
   installTranslucentTB: () => Promise<void>
   installNexus: () => Promise<void>
-  applyTheme: (themeId: string) => Promise<void>
   applyNexusPreset: () => Promise<void>
 }
 
@@ -59,46 +57,6 @@ export function getNexusInstallFeedback(result: NexusInstallResult): {
     tone: 'warning',
     title: 'Nexus 已安装，但配置未导入',
     description: '可更换 .reg 配置后重试安装',
-  }
-}
-
-/** 风格包子项的中文标签（用于分项反馈文案） */
-const THEME_STEP_LABELS: Record<keyof Omit<ApplyThemeResult, 'themeId'>, string> = {
-  wallpaper: '壁纸',
-  taskbar: '任务栏',
-  dock: 'Dock',
-}
-
-/**
- * 由 applyTheme 的分项结果组装用户提示（纯函数，便于单测）。
- *   - 有子项失败 → warning，标题「风格包部分应用成功」，描述列出成功/失败项；
- *   - 无失败 → success，标题「风格包已应用」，描述列出已应用项（全跳过时无描述）。
- * 跳过（资源缺失）不计入失败，避免把「没放 nexus.reg」误报成应用失败。
- */
-export function getApplyThemeFeedback(result: ApplyThemeResult): {
-  tone: 'success' | 'warning'
-  title: string
-  description?: string
-} {
-  const steps = [
-    { label: THEME_STEP_LABELS.wallpaper, step: result.wallpaper },
-    { label: THEME_STEP_LABELS.taskbar, step: result.taskbar },
-    { label: THEME_STEP_LABELS.dock, step: result.dock },
-  ]
-  const applied = steps.filter((s) => s.step.status === 'applied').map((s) => s.label)
-  const failed = steps.filter((s) => s.step.status === 'failed').map((s) => s.label)
-
-  if (failed.length === 0) {
-    return {
-      tone: 'success',
-      title: '风格包已应用',
-      description: applied.length > 0 ? `已应用：${applied.join('、')}` : undefined,
-    }
-  }
-  return {
-    tone: 'warning',
-    title: '风格包部分应用成功',
-    description: `成功：${applied.length > 0 ? applied.join('、') : '无'}；失败：${failed.join('、')}`,
   }
 }
 
@@ -224,21 +182,6 @@ export const useBeautifyStore = create<BeautifyStore>((set, get) => {
         toast.error('安装 Nexus 失败', errorMessage(err))
       } finally {
         set((s) => ({ busy: null, progress: { ...s.progress, nexus: null } }))
-      }
-    },
-    applyTheme: async (themeId) => {
-      if (get().busy) return
-      set({ busy: themeId })
-      try {
-        const result = await window.electronAPI.applyTheme(themeId)
-        const feedback = getApplyThemeFeedback(result)
-        if (feedback.tone === 'success') toast.success(feedback.title, feedback.description)
-        else toast.warning(feedback.title, feedback.description)
-        await get().load(true)
-      } catch (err) {
-        toast.error('应用风格包失败', errorMessage(err))
-      } finally {
-        set({ busy: null })
       }
     },
     applyNexusPreset: async () => {

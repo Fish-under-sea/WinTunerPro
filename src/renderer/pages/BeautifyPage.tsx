@@ -6,38 +6,14 @@ import { AsyncBoundary } from '@renderer/components/AsyncBoundary'
 import {
   PageHeader,
   SectionCard,
-  Card,
   Tag,
   Button,
   Skeleton,
   Progress,
 } from '@renderer/components/ui'
 import { Icon } from '@renderer/components/icons'
-import { cn } from '@renderer/lib/cn'
 import { EASE_OUT } from '@renderer/lib/motion'
 import type { InstallProgress, ToolInstallStatus } from '@shared/types'
-
-/** 本地风格包清单（contract 未提供列表，预览用渐变色块示意） */
-const THEME_PACKS: { id: string; name: string; desc: string; gradient: string }[] = [
-  {
-    id: 'cyber',
-    name: '赛博朋克',
-    desc: '霓虹紫青、深色科技感',
-    gradient: 'from-fuchsia-500 via-purple-600 to-cyan-500',
-  },
-  {
-    id: 'minimal',
-    name: '极简清爽',
-    desc: '留白通透、低饱和浅色',
-    gradient: 'from-sky-300 via-blue-200 to-slate-100',
-  },
-  {
-    id: 'esports',
-    name: '电竞红',
-    desc: '高对比红黑、热血竞技',
-    gradient: 'from-red-500 via-rose-600 to-slate-900',
-  },
-]
 
 export function BeautifyPage(): React.JSX.Element {
   const {
@@ -51,7 +27,6 @@ export function BeautifyPage(): React.JSX.Element {
     load,
     installTranslucentTB,
     installNexus,
-    applyTheme,
     applyNexusPreset,
   } = useBeautifyStore()
 
@@ -64,7 +39,7 @@ export function BeautifyPage(): React.JSX.Element {
       <PageHeader
         icon="palette"
         title="系统美化"
-        description="一键安装任务栏与 Dock 美化工具，并切换整体风格包，让桌面焕然一新。"
+        description="一键安装任务栏与 Dock 美化工具，并套用 Nexus UI 预设，让桌面焕然一新。"
         action={
           <Button
             variant="outline"
@@ -129,55 +104,6 @@ export function BeautifyPage(): React.JSX.Element {
                 feedback={nexusPresetFeedback}
                 onApply={() => void applyNexusPreset()}
               />
-            </SectionCard>
-
-            <SectionCard
-              icon="sparkles"
-              title="风格包"
-              description="一键套用壁纸、图标、任务栏样式的整体风格组合。"
-            >
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                {THEME_PACKS.map((pack, i) => {
-                  const applied = data.currentThemeId === pack.id
-                  const isBusy = busy === pack.id
-                  return (
-                    <motion.div
-                      key={pack.id}
-                      initial={{ opacity: 0, y: 12 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.32, delay: i * 0.05, ease: EASE_OUT }}
-                      whileHover={{ y: -3 }}
-                    >
-                      <Card padding="none" className="overflow-hidden">
-                        <div className={cn('relative h-28 bg-gradient-to-br', pack.gradient)}>
-                          {applied && (
-                            <span className="absolute right-2 top-2">
-                              <Tag tone="success" icon="check">
-                                使用中
-                              </Tag>
-                            </span>
-                          )}
-                        </div>
-                        <div className="p-4">
-                          <div className="text-sm font-semibold text-text">{pack.name}</div>
-                          <p className="mt-0.5 text-xs text-text-muted">{pack.desc}</p>
-                          <Button
-                            className="mt-3"
-                            size="sm"
-                            block
-                            variant={applied ? 'outline' : 'primary'}
-                            disabled={applied || (busy !== null && !isBusy)}
-                            loading={isBusy}
-                            onClick={() => void applyTheme(pack.id)}
-                          >
-                            {applied ? '已应用' : '应用风格'}
-                          </Button>
-                        </div>
-                      </Card>
-                    </motion.div>
-                  )
-                })}
-              </div>
             </SectionCard>
           </div>
         )}

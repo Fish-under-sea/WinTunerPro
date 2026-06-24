@@ -1,11 +1,11 @@
 /**
- * beautify 模块共享类型——系统美化（TranslucentTB / Nexus / 风格包）（数据契约）。
+ * beautify 模块共享类型——系统美化（TranslucentTB / Nexus）（数据契约）。
  *
  * 对应手段：
  *   - 工具安装状态：检测安装路径 / 注册表卸载项 / 进程是否运行。
  *   - 安装：调用随包离线安装包静默安装（TranslucentTB、Nexus Dock）。
- *   - 风格包：应用预置主题资源（壁纸/图标/任务栏样式等组合）。
- * 安装/应用属写系统操作，桩阶段抛“未实现”，由功能代理实现并落备份。
+ *   - Nexus UI 预设：以离线 .wbk 备份对齐 Nexus 界面设置（忽略快捷方式）。
+ * 安装/应用属写系统操作，由功能代理实现并落备份。
  */
 
 /** 第三方美化工具的安装/运行状态 */
@@ -16,18 +16,6 @@ export interface ToolInstallStatus {
   version?: string
   /** 是否正在运行 */
   running?: boolean
-}
-
-/** 风格包（预置主题，供前端展示与选择） */
-export interface ThemePack {
-  /** 风格包唯一 id */
-  id: string
-  /** 风格包名称，如 “赛博朋克” / “极简白” / “电竞红” */
-  name: string
-  /** 预览图（资源路径或 data URI） */
-  preview: string
-  /** 风格包说明 */
-  description: string
 }
 
 /**
@@ -53,8 +41,6 @@ export interface BeautifyStatus {
   translucenttb: ToolInstallStatus
   /** Nexus（Dock 工具）状态 */
   nexus: ToolInstallStatus
-  /** 当前已应用的风格包 id，未应用为 null */
-  currentThemeId: string | null
 }
 
 /** Nexus 安装结果：安装成功后返回配置导入与告警信息，避免“安装成功被误判失败”。 */
@@ -234,27 +220,4 @@ export interface NexusDeployResult {
   backupDir?: string
   /** 非致命告警（例如某子目录在预设包内缺失） */
   warnings?: string[]
-}
-
-/**
- * 风格包单个子项（壁纸 / 任务栏 / Dock）的应用结果。
- * 各子项相互独立：单项失败不中断其余子项，便于在 UI 上分项标注成败。
- */
-export interface ThemeStepResult {
-  /** applied=已应用；skipped=风格包未包含该项资源、跳过；failed=应用失败（非致命） */
-  status: 'applied' | 'skipped' | 'failed'
-  /** 跳过 / 失败原因（人话，可直接展示） */
-  message?: string
-}
-
-/** 应用风格包的分项结果（壁纸 / 任务栏 / Dock 各自成败） */
-export interface ApplyThemeResult {
-  /** 本次应用的风格包 id */
-  themeId: string
-  /** 壁纸应用结果 */
-  wallpaper: ThemeStepResult
-  /** 任务栏（TranslucentTB）配置应用结果 */
-  taskbar: ThemeStepResult
-  /** Dock（Nexus）配置应用结果 */
-  dock: ThemeStepResult
 }

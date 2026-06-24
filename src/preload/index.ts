@@ -61,7 +61,6 @@ const api: ElectronAPI = {
   getBeautifyStatus: () => ipcRenderer.invoke(BEAUTIFY_CHANNELS.GET_STATUS),
   installTranslucentTB: () => ipcRenderer.invoke(BEAUTIFY_CHANNELS.INSTALL_TRANSLUCENTTB),
   installNexus: () => ipcRenderer.invoke(BEAUTIFY_CHANNELS.INSTALL_NEXUS),
-  applyTheme: (themeId) => ipcRenderer.invoke(BEAUTIFY_CHANNELS.APPLY_THEME, themeId),
   applyNexusPreset: () => ipcRenderer.invoke(BEAUTIFY_CHANNELS.APPLY_NEXUS_PRESET),
   onInstallProgress: (cb) => {
     const fn = (_e: unknown, p: InstallProgress): void => cb(p)

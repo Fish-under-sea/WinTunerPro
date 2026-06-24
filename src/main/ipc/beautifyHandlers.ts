@@ -6,7 +6,6 @@ import {
   getBeautifyStatus,
   installTranslucentTB,
   installNexus,
-  applyTheme,
   applyNexusUiPreset,
 } from '../services/beautifyService'
 import type { InstallProgressUpdate } from '../services/beautifyService'
@@ -27,7 +26,6 @@ function forwardInstallProgress(
 
 /**
  * beautify 模块 IPC 处理器。
- * apply-theme 接收渲染进程传入的风格包 id，处理器做基本校验后转发 service。
  * 安装类把脚本流式进度回传调用方渲染进程（beautify:install-progress）。
  */
 export function registerBeautifyHandlers(): void {
@@ -38,6 +36,5 @@ export function registerBeautifyHandlers(): void {
   ipcMain.handle(BEAUTIFY_CHANNELS.INSTALL_NEXUS, (event) =>
     installNexus(forwardInstallProgress(event, 'nexus')),
   )
-  ipcMain.handle(BEAUTIFY_CHANNELS.APPLY_THEME, (_event, themeId: string) => applyTheme(themeId))
   ipcMain.handle(BEAUTIFY_CHANNELS.APPLY_NEXUS_PRESET, () => applyNexusUiPreset())
 }

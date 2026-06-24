@@ -34,7 +34,6 @@ interface ScriptResult {
 
 /** 应用配置（%AppData%\WinTunerPro\config.json），记录用户选择，跨重启保持 */
 interface WtConfig {
-  currentThemeId?: string | null
   currentWallpaperId?: string | null
 }
 
