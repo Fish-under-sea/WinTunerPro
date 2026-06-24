@@ -19,7 +19,13 @@ import type {
   ChangeMachineIdOptions,
   ChangeMachineIdResult,
 } from './reinstall'
-import type { BeautifyStatus, InstallProgress, NexusInstallResult } from './beautify'
+import type {
+  ApplyThemeResult,
+  BeautifyStatus,
+  InstallProgress,
+  NexusConfigImportResult,
+  NexusInstallResult,
+} from './beautify'
 import type { WallpaperState, WallpaperEngineStatus } from './wallpaper'
 import type {
   OptimizationApplyResult,
@@ -103,8 +109,13 @@ export interface ElectronAPI {
   installTranslucentTB: () => Promise<void>
   /** 安装 Nexus（写操作） */
   installNexus: () => Promise<NexusInstallResult>
-  /** 应用风格包（写操作） */
-  applyTheme: (themeId: string) => Promise<void>
+  /** 应用风格包（写操作，返回壁纸 / 任务栏 / Dock 分项成败） */
+  applyTheme: (themeId: string) => Promise<ApplyThemeResult>
+  /**
+   * 以 resources/themes/nexus/wsbackup.wbk 为源对齐 Nexus UI 设置（写操作，忽略快捷方式）。
+   * 预设源缺失返回 null；[DOCKS] 落点未上机验证，当前默认 DryRun（dryRun=true 表示仅预演未写入）。
+   */
+  applyNexusPreset: () => Promise<NexusConfigImportResult | null>
   /** 订阅安装进度事件（TranslucentTB / Nexus），返回取消订阅函数 */
   onInstallProgress: (cb: (p: InstallProgress) => void) => () => void
 

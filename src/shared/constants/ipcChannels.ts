@@ -87,6 +87,8 @@ export const BEAUTIFY_CHANNELS = {
   INSTALL_NEXUS: 'beautify:install-nexus',
   /** 应用风格包（写操作） */
   APPLY_THEME: 'beautify:apply-theme',
+  /** 以 resources/themes/nexus/wsbackup.wbk 为源对齐 Nexus UI 设置（写操作，忽略快捷方式） */
+  APPLY_NEXUS_PRESET: 'beautify:apply-nexus-preset',
   /** 安装进度事件（main→renderer 单向推送） */
   INSTALL_PROGRESS: 'beautify:install-progress',
 } as const

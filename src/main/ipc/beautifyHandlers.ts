@@ -7,6 +7,7 @@ import {
   installTranslucentTB,
   installNexus,
   applyTheme,
+  applyNexusUiPreset,
 } from '../services/beautifyService'
 import type { InstallProgressUpdate } from '../services/beautifyService'
 
@@ -38,4 +39,5 @@ export function registerBeautifyHandlers(): void {
     installNexus(forwardInstallProgress(event, 'nexus')),
   )
   ipcMain.handle(BEAUTIFY_CHANNELS.APPLY_THEME, (_event, themeId: string) => applyTheme(themeId))
+  ipcMain.handle(BEAUTIFY_CHANNELS.APPLY_NEXUS_PRESET, () => applyNexusUiPreset())
 }

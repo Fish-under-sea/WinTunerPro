@@ -37,38 +37,22 @@ try {
   }
   Write-WtProgress -Percent 70 -Stage '安装完成，处理配置'
 
-  # 配置导入（可选）：.reg 文件，导入前备份现有 WinSTEP2000 注册表
+  # 配置导入（可选）：.reg 文件，「停-备-导」核心逻辑复用 Import-NexusConfigFile（与解耦导入脚本同源）
   $configImported = $false
   $backup = ''
   if (-not [string]::IsNullOrWhiteSpace($ConfigSource)) {
-    if (-not (Test-Path -LiteralPath $ConfigSource -PathType Leaf)) {
-      throw "Nexus 预置配置不存在：$ConfigSource"
-    }
-    $ext = [System.IO.Path]::GetExtension($ConfigSource).ToLower()
-    if ($ext -eq '.reg') {
-      Write-WtProgress -Percent 85 -Stage '备份并导入预置配置'
-      Stop-Process -Name 'Nexus' -Force -ErrorAction SilentlyContinue
-      $backup = Backup-RegistryKeyToFile -RegPath 'HKCU\Software\WinSTEP2000' -BackupDir $BackupDir -Tag 'nexus-winstep2000'
-      $importResult = Import-RegistryFileRobust -ConfigSource $ConfigSource
-      if ($importResult.fallbackUsed) {
-        $warnings.Add('检测到注册表文件编码兼容性问题，已自动转码后导入。')
-      }
-      $configImported = $true
-    }
-    else {
-      throw "不支持的 Nexus 配置类型：$ext（请提供 .reg）"
+    Write-WtProgress -Percent 85 -Stage '备份并导入预置配置'
+    $imp = Import-NexusConfigFile -ConfigSource $ConfigSource -BackupDir $BackupDir
+    $configImported = [bool]$imp.configImported
+    $backup = [string]$imp.backup
+    if ($imp.fallbackUsed) {
+      $warnings.Add('检测到注册表文件编码兼容性问题，已自动转码后导入。')
     }
   }
 
   Write-WtProgress -Percent 100 -Stage 'Nexus 安装完成'
-  $nexusExe = Get-NexusExecutablePath
-  if (-not [string]::IsNullOrWhiteSpace($nexusExe)) {
-    try {
-      Start-Process -FilePath $nexusExe -ErrorAction SilentlyContinue | Out-Null
-    }
-    catch {
-      $warnings.Add("配置导入后自动重启 Nexus 失败：$($_.Exception.Message)")
-    }
+  if (-not (Restart-NexusProcess) -and $configImported) {
+    $warnings.Add('配置导入后自动重启 Nexus 失败，可手动启动。')
   }
 
   Write-WtResult -Ok $true -Data ([ordered]@{

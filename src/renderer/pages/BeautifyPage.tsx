@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { useBeautifyStore } from '@renderer/store/beautifyStore'
+import { NEXUS_PRESET_BUSY_KEY, useBeautifyStore } from '@renderer/store/beautifyStore'
+import type { ApplyNexusPresetFeedback } from '@renderer/store/beautifyStore'
 import { AsyncBoundary } from '@renderer/components/AsyncBoundary'
 import {
   PageHeader,
@@ -46,10 +47,12 @@ export function BeautifyPage(): React.JSX.Element {
     loaded,
     busy,
     progress,
+    nexusPresetFeedback,
     load,
     installTranslucentTB,
     installNexus,
     applyTheme,
+    applyNexusPreset,
   } = useBeautifyStore()
 
   useEffect(() => {
@@ -117,6 +120,19 @@ export function BeautifyPage(): React.JSX.Element {
 
             <SectionCard
               icon="sparkles"
+              title="Nexus UI 预设"
+              description="以内置模板一键对齐 Nexus 的 Dock 外观与界面设置，让程序坞风格统一（不会改动你的快捷方式）。"
+            >
+              <NexusPresetCard
+                busy={busy === NEXUS_PRESET_BUSY_KEY}
+                disabled={busy !== null}
+                feedback={nexusPresetFeedback}
+                onApply={() => void applyNexusPreset()}
+              />
+            </SectionCard>
+
+            <SectionCard
+              icon="sparkles"
               title="风格包"
               description="一键套用壁纸、图标、任务栏样式的整体风格组合。"
             >
@@ -166,6 +182,88 @@ export function BeautifyPage(): React.JSX.Element {
           </div>
         )}
       </AsyncBoundary>
+    </div>
+  )
+}
+
+/** feedback 语气 → Tag 配色（info 复用 primary，dryRun 单独走醒目蓝调） */
+const FEEDBACK_TAG_TONE: Record<ApplyNexusPresetFeedback['tone'], 'primary' | 'success' | 'warning'> =
+  {
+    info: 'primary',
+    success: 'success',
+    warning: 'warning',
+  }
+
+const FEEDBACK_ICON: Record<ApplyNexusPresetFeedback['tone'], 'info' | 'check' | 'alert'> = {
+  info: 'info',
+  success: 'check',
+  warning: 'alert',
+}
+
+function NexusPresetCard({
+  busy,
+  disabled,
+  feedback,
+  onApply,
+}: {
+  busy: boolean
+  disabled: boolean
+  feedback: ApplyNexusPresetFeedback | null
+  onApply: () => void
+}): React.JSX.Element {
+  return (
+    <div className="rounded-xl border border-border bg-surface-2 p-4">
+      <div className="flex items-start gap-3">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
+          <Icon name="sparkles" size={22} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold text-text">应用 Nexus UI 预设</div>
+          <p className="mt-0.5 text-xs text-text-muted">
+            一键把内置模板里的 Dock 尺寸、动效、位置、主题等界面设置套用到本机；快捷方式保持原样不动。
+          </p>
+
+          <Button
+            className="mt-3"
+            size="sm"
+            leftIcon="sparkles"
+            loading={busy}
+            disabled={disabled}
+            onClick={onApply}
+          >
+            {busy ? '正在应用…' : '应用 Nexus UI 预设'}
+          </Button>
+
+          <AnimatePresence mode="wait" initial={false}>
+            {feedback && (
+              <motion.div
+                key={`${feedback.title}-${feedback.description ?? ''}`}
+                className="mt-3 rounded-lg border border-border bg-surface p-3"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.22, ease: EASE_OUT }}
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <Tag tone={FEEDBACK_TAG_TONE[feedback.tone]} icon={FEEDBACK_ICON[feedback.tone]}>
+                    {feedback.title}
+                  </Tag>
+                  {feedback.dryRun && (
+                    <Tag tone="primary" icon="info">
+                      预演模式 · 确认后生效
+                    </Tag>
+                  )}
+                </div>
+                {feedback.description && (
+                  <p className="mt-2 text-xs leading-relaxed text-text-muted">
+                    {feedback.description}
+                  </p>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
     </div>
   )
 }

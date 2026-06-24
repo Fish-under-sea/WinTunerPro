@@ -222,3 +222,199 @@ function Test-NexusInstalled {
   if ($entry) { return $true }
   return -not [string]::IsNullOrWhiteSpace((Get-NexusExecutablePath))
 }
+
+# Nexus 注册表根（本机实测键名，旧文档写 Winstep 为误）。
+$NexusRegRoot = 'HKCU\Software\WinSTEP2000'
+
+# .wbk 段名 → 注册表子键 的映射（数据契约，必须与 src/shared/types/beautify.ts 的
+# NEXUS_WBK_SECTION_TO_SUBKEY 保持一致）。
+#   - WORKSHELF ↔ NeXuS、SHARED ↔ Shared：已上机比对验证。
+#   - DOCKS ↔ NeXuS：⚠ 尚未上机验证 → .wbk 导入默认 DryRun（见 Import-NexusConfigFile）。
+$NexusSectionToSubKey = [ordered]@{
+  'WORKSHELF' = 'NeXuS'
+  'SHARED'    = 'Shared'
+  'DOCKS'     = 'NeXuS'   # ⚠ 待上机验证
+}
+
+# 解析 Nexus .wbk（实为 UTF-8 纯文本 INI，含 [DOCKS]/[WORKSHELF]/[SHARED] 段）。
+# 返回 [ordered]@{ 段名 = [ordered]@{ key = value } }。值可能含 '='，按首个 '=' 切分。
+function Read-NexusBackupIni {
+  param([Parameter(Mandatory)][string]$Path)
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    throw "备份文件不存在：$Path"
+  }
+  $result = [ordered]@{}
+  $current = $null
+  foreach ($line in (Get-Content -LiteralPath $Path -Encoding UTF8)) {
+    if ($line -match '^\s*\[(.+?)\]\s*$') {
+      $current = $Matches[1]
+      if (-not $result.Contains($current)) { $result[$current] = [ordered]@{} }
+      continue
+    }
+    if ($null -eq $current) { continue }
+    $idx = $line.IndexOf('=')
+    if ($idx -lt 1) { continue }
+    $k = $line.Substring(0, $idx)
+    $v = $line.Substring($idx + 1)
+    $result[$current][$k] = $v
+  }
+  return $result
+}
+
+# 判定一个 .wbk 键名是否为「快捷方式 / Dock 图标条目项」（应跳过，不写入注册表）。
+# 规则与 TS 契约层 isNexusShortcutKey（src/shared/types/beautify.ts）保持一致：
+#   - 依据真实 wsbackup.wbk：[DOCKS] 段每个图标条目以 <dock序号><字段><条目序号> 命名
+#     （1Label0 / 1Path0=...\xx.lnk / 1StartPath0 / 1Type0 / 1Hotkey2），全部「以数字开头」；
+#     UI/外观键一律「以字母开头」（DockIconSize1 / DockFxEffect1 / NeXuSThemeName ...）。
+#   1. 以数字开头 → 快捷方式条目（跳过）。
+#   2. DockNoItems<n>（条目计数）→ 也跳过：用户要求不动本机快捷方式，只写计数不写条目会不一致。
+# 保守原则：宁可多跳过疑似快捷方式项，也不要误写覆盖用户本机快捷方式。
+function Test-NexusShortcutKey {
+  param([Parameter(Mandatory)][string]$Name)
+  if ($Name -match '^\d') { return $true }
+  if ($Name -match '^DockNoItems\d+$') { return $true }
+  return $false
+}
+
+# 由已解析的 INI 段映射出注册表写入计划（纯逻辑：段→子键映射 + 平铺键值）。
+# 过滤掉「快捷方式 / Dock 图标条目项」（见 Test-NexusShortcutKey）——只对齐 UI 设置。
+# 返回 [ordered]@{ plan; skippedCount; skipped }：
+#   - plan         ：List[object]，每项 = @{ subKey; regPath; name; value }（仅 UI 设置）。
+#   - skippedCount ：被跳过的快捷方式项数。
+#   - skipped      ：被跳过键名样例（截断展示，便于核对）。
+# 未在段→子键映射表中的段被忽略。
+function Get-NexusBackupRegPlan {
+  param([Parameter(Mandatory)]$Ini)
+  $plan = New-Object System.Collections.Generic.List[object]
+  $skipped = New-Object System.Collections.Generic.List[string]
+  foreach ($section in $Ini.Keys) {
+    if (-not $NexusSectionToSubKey.Contains($section)) { continue }
+    $subKey = $NexusSectionToSubKey[$section]
+    foreach ($k in $Ini[$section].Keys) {
+      if (Test-NexusShortcutKey -Name $k) {
+        $skipped.Add($k)
+        continue
+      }
+      $plan.Add([ordered]@{
+          subKey  = $subKey
+          regPath = "$NexusRegRoot\$subKey"
+          name    = $k
+          value   = $Ini[$section][$k]
+        })
+    }
+  }
+  return [ordered]@{
+    plan         = $plan
+    skippedCount = $skipped.Count
+    skipped      = @($skipped | Select-Object -First 20)
+  }
+}
+
+# 导入 Nexus 预置配置的「停-备-导」核心逻辑（同源底层），供安装脚本与两个解耦导入脚本共用。
+# 按 ConfigSource 扩展名分流（仅此一步不同，骨架与备份/回滚保持一致）：
+#   - .reg：停 Nexus → 备份 HKCU\Software\WinSTEP2000 → 稳健 reg import。
+#   - .wbk：解析 INI → 段映射成注册表计划；DryRun（默认建议）仅返回计划不落盘；
+#           真实写入时 停 Nexus → 备份整树 → 逐项写 String 值。
+# 仅负责导入，不负责重启（重启交由 Restart-NexusProcess，便于调用方按场景控制进度文案/告警）。
+# ⚠ .wbk 的 [DOCKS] 段落点（HKCU\Software\WinSTEP2000\NeXuS）尚未上机验证，调用方应默认 -DryRun，
+#   在装有 Nexus 的机器上 GUI 恢复一次后 diff 注册表确认无误，再去掉 DryRun 真实写入。
+# 返回 [ordered]@{ format; dryRun; configImported; backup; fallbackUsed; writtenCount; plannedCount; sections; sample }。
+function Import-NexusConfigFile {
+  param(
+    [Parameter(Mandatory)][string]$ConfigSource,
+    [Parameter(Mandatory)][string]$BackupDir,
+    [switch]$DryRun
+  )
+  if (-not (Test-Path -LiteralPath $ConfigSource -PathType Leaf)) {
+    throw "Nexus 预置配置不存在：$ConfigSource"
+  }
+  $ext = [System.IO.Path]::GetExtension($ConfigSource).ToLower()
+
+  switch ($ext) {
+    '.reg' {
+      # DryRun 对 .reg 无实际预览价值（reg import 是原子操作），仅作安全短路：不导入、不备份。
+      if ($DryRun) {
+        return [ordered]@{
+          format = 'reg'; dryRun = $true; configImported = $false
+          backup = ''; fallbackUsed = $false
+        }
+      }
+      # 导入前关闭 Nexus，避免运行中进程把内存里的旧配置回写、覆盖刚导入的注册表值。
+      Stop-Process -Name 'Nexus' -Force -ErrorAction SilentlyContinue
+      $backup = Backup-RegistryKeyToFile -RegPath $NexusRegRoot -BackupDir $BackupDir -Tag 'nexus-winstep2000'
+      $importResult = Import-RegistryFileRobust -ConfigSource $ConfigSource
+      return [ordered]@{
+        format         = 'reg'
+        dryRun         = $false
+        configImported = $true
+        backup         = $backup
+        fallbackUsed   = [bool]$importResult.fallbackUsed
+      }
+    }
+    '.wbk' {
+      $ini = Read-NexusBackupIni -Path $ConfigSource
+      # 计划已过滤掉「快捷方式 / Dock 图标条目项」，仅保留 UI 设置（见 Get-NexusBackupRegPlan）。
+      $planResult = Get-NexusBackupRegPlan -Ini $ini
+      $plan = $planResult.plan
+      $skippedShortcutCount = [int]$planResult.skippedCount
+
+      if ($DryRun) {
+        # ⚠ 仅预演：不停进程、不备份、不写注册表。用于 [DOCKS] 落点上机核对前的安全核验。
+        return [ordered]@{
+          format               = 'wbk'
+          dryRun                = $true
+          configImported        = $false
+          backup                = ''
+          fallbackUsed          = $false
+          plannedCount          = $plan.Count
+          skippedShortcutCount  = $skippedShortcutCount
+          sections              = @($ini.Keys)
+          sample                = @($plan | Select-Object -First 10)
+          skippedShortcutSample = @($planResult.skipped)
+        }
+      }
+
+      # —— 真实写入路径（调用方显式去掉 -DryRun 后）——
+      Stop-Process -Name 'Nexus' -Force -ErrorAction SilentlyContinue
+      # 写系统前必须备份（项目规则）：导出整个 WinSTEP2000 根，覆盖所有段。
+      $backup = Backup-RegistryKeyToFile -RegPath $NexusRegRoot -BackupDir $BackupDir -Tag 'nexus-winstep2000-prerestore'
+      $written = 0
+      foreach ($item in $plan) {
+        $psPath = 'Registry::HKEY_CURRENT_USER\Software\WinSTEP2000\' + $item.subKey
+        if (-not (Test-Path -LiteralPath $psPath)) {
+          New-Item -Path $psPath -Force | Out-Null
+        }
+        # 所有值在 Nexus 中均以 REG_SZ 字符串存储（实测），故统一写 String 类型。
+        New-ItemProperty -LiteralPath $psPath -Name $item.name -Value $item.value -PropertyType String -Force | Out-Null
+        $written++
+      }
+      return [ordered]@{
+        format               = 'wbk'
+        dryRun               = $false
+        configImported       = $true
+        backup               = $backup
+        fallbackUsed         = $false
+        writtenCount         = $written
+        plannedCount         = $plan.Count
+        skippedShortcutCount = $skippedShortcutCount
+        sections             = @($ini.Keys)
+      }
+    }
+    default {
+      throw "不支持的 Nexus 配置类型：$ext（请提供 .reg 或 .wbk）"
+    }
+  }
+}
+
+# 重新拉起 Nexus.exe（已安装才有意义）。失败不抛异常，返回 $true/$false 由调用方决定是否记告警。
+function Restart-NexusProcess {
+  $nexusExe = Get-NexusExecutablePath
+  if ([string]::IsNullOrWhiteSpace($nexusExe)) { return $false }
+  try {
+    Start-Process -FilePath $nexusExe -ErrorAction SilentlyContinue | Out-Null
+    return $true
+  }
+  catch {
+    return $false
+  }
+}

@@ -3,7 +3,17 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { dirname, extname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { app } from 'electron'
-import type { BeautifyStatus, NexusInstallResult, ToolInstallStatus } from '@shared/types/beautify'
+import type {
+  ApplyThemeResult,
+  BeautifyStatus,
+  NexusConfigImportResult,
+  NexusDeployResult,
+  NexusDeployTargetToken,
+  NexusInstallResult,
+  ThemeStepResult,
+  ToolInstallStatus,
+} from '@shared/types/beautify'
+import { buildNexusDeployManifest, pickNexusConfigSource } from '@shared/types/beautify'
 
 /** 安装过程进度回调的载荷（不含 tool；tool 由 IPC 处理器补齐后推送渲染进程） */
 export interface InstallProgressUpdate {
@@ -29,6 +39,20 @@ const execFileAsync = promisify(execFile)
 
 /** 支持的风格包白名单（赛博 / 简约 / 电竞） */
 const THEME_WHITELIST = ['cyber', 'minimal', 'esports'] as const
+
+type ThemeId = (typeof THEME_WHITELIST)[number]
+
+/** themeId 白名单校验（防注入 / 越权拼路径）；非法直接抛错。 */
+function assertThemeId(themeId: string): asserts themeId is ThemeId {
+  if (!THEME_WHITELIST.includes(themeId as ThemeId)) {
+    throw new Error(`不支持的风格包：${themeId}（允许：${THEME_WHITELIST.join(' / ')}）`)
+  }
+}
+
+/** 把未知异常转成可读中文消息（主进程无 renderer 的 errorMessage 工具） */
+function toErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
 
 /** 脚本通用返回结构 */
 interface ScriptResult {
@@ -332,47 +356,246 @@ export async function installNexus(onProgress?: InstallProgressCb): Promise<Nexu
 }
 
 /**
- * 应用风格包（写操作）。本期落地「壁纸 + TranslucentTB 配置」组合：
- *   resources/themes/<themeId>/ 下约定放壁纸图片与 translucenttb.json。
- * 图标、Dock 布局等复杂项后续迭代。themeId 做白名单校验。
+ * 导入指定风格包的 Nexus 预置配置（写操作，与「安装」解耦）。
+ *
+ * 约定资源位置：resources/themes/<themeId>/nexus.reg 或 nexus.wbk（两者均无返回 null，
+ * 调用方按「跳过」处理，不报错）。统一入口 Import-NexusConfig.ps1 按扩展名分流（底层同源）：
+ *   - .reg：检测已安装 → 停进程 → 备份 HKCU\Software\WinSTEP2000 → reg import → 重启（最稳，优先）。
+ *   - .wbk：解析 INI 段 → 映射注册表写入。⚠ [DOCKS] 落点未上机验证 → 默认 -DryRun（仅预演不写入）。
+ * 路径由本层用受控的 themeId 拼装，渲染进程不得传任意路径。
+ *
+ * 本函数对外导出，便于后续（P1）「重新应用预设」独立入口直接复用，无需改脚本。
  */
-export async function applyTheme(themeId: string): Promise<void> {
-  if (!THEME_WHITELIST.includes(themeId as (typeof THEME_WHITELIST)[number])) {
-    throw new Error(`不支持的风格包：${themeId}（允许：${THEME_WHITELIST.join(' / ')}）`)
+export async function importNexusConfig(themeId: string): Promise<NexusConfigImportResult | null> {
+  assertThemeId(themeId)
+  const themeDir = join(getResourcesRoot(), 'themes', themeId)
+  if (!existsSync(themeDir)) return null
+
+  // 仅在 nexus.reg / nexus.wbk 中按「reg 优先」分流，避免误选风格包内其它 .reg。
+  const candidates = readdirSync(themeDir).filter((f) => /^nexus\.(reg|wbk)$/i.test(f))
+  const picked = pickNexusConfigSource(candidates)
+  if (!picked) return null
+
+  const source = join(themeDir, picked.fileName)
+  const args = ['-ConfigSource', source, '-BackupDir', getBackupDir()]
+  // .wbk 的 [DOCKS] 落点尚未上机验证：默认 DryRun，仅预演不写入注册表（项目安全硬规则）。
+  if (picked.format === 'wbk') args.push('-DryRun')
+
+  // Nexus 导入涉及停止/重启进程与注册表写入，耗时短，给 2 分钟超时
+  return runScript<NexusConfigImportResult>('beautify', 'Import-NexusConfig.ps1', args, 120000)
+}
+
+/** 把资源铺设落点 token 解析为本机绝对路径（%PUBLIC% 缺省兜底 C:\Users\Public）。 */
+function resolveDeployTarget(token: NexusDeployTargetToken): string {
+  const pub = process.env.PUBLIC || 'C:\\Users\\Public'
+  switch (token) {
+    case 'PUBLIC_WINSTEP_THEMES':
+      return join(pub, 'Documents', 'WinStep', 'Themes')
+    case 'PUBLIC_WINSTEP_ICONS':
+      return join(pub, 'Documents', 'WinStep', 'Icons')
   }
+}
+
+/**
+ * 铺设指定风格包的 Nexus 离线资源（写操作）。
+ *
+ * 约定资源位置：resources/themes/<themeId>/nexus/<source>/（source 见 NEXUS_DEPLOY_CONVENTION：
+ * theme / icons / shortcuts）。目录不存在或无可铺设子目录时返回 null（调用方按「无资源」处理）。
+ * 资源清单组装为纯逻辑（buildNexusDeployManifest），本层把每条映射解析成绝对路径后交脚本铺设。
+ * 脚本覆盖目标同名文件前先备份（项目安全硬规则）。
+ *
+ * 因 .wbk/.reg 预设以绝对路径引用资源，applyTheme 中应「先铺资源、再导入注册表配置」。
+ */
+export async function deployNexusResources(themeId: string): Promise<NexusDeployResult | null> {
+  assertThemeId(themeId)
+  const nexusDir = join(getResourcesRoot(), 'themes', themeId, 'nexus')
+  if (!existsSync(nexusDir)) return null
+
+  const subdirs = readdirSync(nexusDir, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => d.name)
+  const manifest = buildNexusDeployManifest(subdirs)
+  if (manifest.length === 0) return null
+
+  const resolved = manifest.map((e) => ({
+    source: join(nexusDir, e.source),
+    target: resolveDeployTarget(e.target),
+  }))
+
+  return runScript<NexusDeployResult>(
+    'beautify',
+    'Deploy-NexusResources.ps1',
+    ['-ManifestJson', JSON.stringify(resolved), '-BackupDir', getBackupDir()],
+    120000,
+  )
+}
+
+/** Nexus UI 对齐预设目录与唯一预设源文件（以这份 .wbk 备份为准对齐 UI 设置）。 */
+const NEXUS_PRESET_DIR = 'nexus'
+const NEXUS_PRESET_WBK = 'wsbackup.wbk'
+
+/**
+ * 以 `resources/themes/nexus/wsbackup.wbk` 为唯一预设源，把一份 .wbk 备份的「UI 设置」
+ * 对齐到本机（写操作，与风格包 applyTheme 解耦的独立入口）。
+ *
+ * 行为（严格对应需求「完全按 wbk 对齐 UI、但忽略快捷方式」）：
+ *   1. 先铺设 UI 外观必需资源（theme / icons），绝不铺 shortcuts——
+ *      shortcuts 已从 NEXUS_DEPLOY_CONVENTION 移除，故 buildNexusDeployManifest 天然不会产出。
+ *      wbk 以绝对路径引用主题位图（如 Windows10Nx / NxBack.png），目标机缺该主题会导致外观对不齐，
+ *      因此 theme/icons 若随包存在则铺设；缺失则跳过（不报错）。
+ *   2. 再导入 .wbk：底层 Get-NexusBackupRegPlan 已过滤掉「快捷方式 / Dock 图标条目项」，
+ *      仅对齐 UI 设置；返回 writtenCount / skippedShortcutCount 便于核对。
+ *   ⚠ [DOCKS] 段落点（HKCU\Software\WinSTEP2000\NeXuS）尚未上机验证 → 默认 -DryRun（仅预演不写入）。
+ *     在装有 Nexus 的机器上 GUI 恢复后 diff 注册表确认无误，再去掉 DryRun 真实写入。
+ *
+ * 预设源缺失（resources 离线包未铺设）时返回 null，调用方按「无预设」处理，不报错。
+ */
+export async function applyNexusUiPreset(): Promise<NexusConfigImportResult | null> {
+  const presetDir = join(getResourcesRoot(), 'themes', NEXUS_PRESET_DIR)
+  const source = join(presetDir, NEXUS_PRESET_WBK)
+  if (!existsSync(source)) return null
+
+  // 先铺 UI 外观资源（theme/icons），绝不铺 shortcuts（约定表已移除快捷方式落点）。
+  const subdirs = existsSync(presetDir)
+    ? readdirSync(presetDir, { withFileTypes: true })
+        .filter((d) => d.isDirectory())
+        .map((d) => d.name)
+    : []
+  const manifest = buildNexusDeployManifest(subdirs)
+  if (manifest.length > 0) {
+    const resolved = manifest.map((e) => ({
+      source: join(presetDir, e.source),
+      target: resolveDeployTarget(e.target),
+    }))
+    await runScript<NexusDeployResult>(
+      'beautify',
+      'Deploy-NexusResources.ps1',
+      ['-ManifestJson', JSON.stringify(resolved), '-BackupDir', getBackupDir()],
+      120000,
+    )
+  }
+
+  // 以 wbk 为唯一预设源对齐 UI；[DOCKS] 落点未上机验证 → 默认 DryRun（项目安全硬规则）。
+  return runScript<NexusConfigImportResult>(
+    'beautify',
+    'Import-NexusConfig.ps1',
+    ['-ConfigSource', source, '-BackupDir', getBackupDir(), '-DryRun'],
+    120000,
+  )
+}
+
+/**
+ * 应用风格包（写操作）。落地「壁纸 + TranslucentTB 任务栏 + Nexus Dock」三件套组合：
+ *   resources/themes/<themeId>/ 下约定放壁纸图片、translucenttb.json、nexus.reg（均为可选）。
+ *
+ * 设计要点：
+ *   - themeId 白名单校验，防注入 / 越权拼路径。
+ *   - 三个子项相互独立：单项失败不中断其余子项，分别记 applied/skipped/failed 返回（供 UI 分项标注）。
+ *   - Dock 缺失（无 nexus.reg|.wbk、无 nexus/ 资源目录）时跳过；存在时先铺资源、再导入配置（脚本内先备份、可回滚）。
+ *   - 只要有任一子项成功就记录 currentThemeId；三项资源全缺才抛错。
+ */
+export async function applyTheme(themeId: string): Promise<ApplyThemeResult> {
+  assertThemeId(themeId)
 
   const themeDir = join(getResourcesRoot(), 'themes', themeId)
   if (!existsSync(themeDir)) {
-    throw new Error(`风格包资源缺失：${themeDir}（请放置壁纸与 translucenttb.json）`)
+    throw new Error(`风格包资源缺失：${themeDir}（请放置壁纸 / translucenttb.json / nexus.reg）`)
   }
 
   const wallpaper = findFileByExt(themeDir, ['.jpg', '.jpeg', '.png', '.bmp'])
   const ttbConfig =
     findFileByName(themeDir, 'translucenttb.json') ?? findFileByName(themeDir, 'settings.json')
+  // Dock 资源：注册表预设（nexus.reg / nexus.wbk）或离线资源目录（nexus/）任一存在即联动。
+  const nexusConfig = pickNexusConfigSource(
+    existsSync(themeDir) ? readdirSync(themeDir).filter((f) => /^nexus\.(reg|wbk)$/i.test(f)) : [],
+  )
+  const hasNexusResources = existsSync(join(themeDir, 'nexus'))
+  const hasDock = Boolean(nexusConfig) || hasNexusResources
 
-  if (!wallpaper && !ttbConfig) {
-    throw new Error(`风格包 ${themeId} 未包含可应用的资源（壁纸或 translucenttb.json）`)
-  }
-
-  // 应用壁纸（复用 wallpaper 模块脚本，脚本内先备份桌面注册表）
-  if (wallpaper) {
-    await runScript(
-      'wallpaper',
-      'Set-StaticWallpaper.ps1',
-      ['-Path', wallpaper, '-Style', 'fill', '-BackupDir', getBackupDir()],
-      60000,
+  if (!wallpaper && !ttbConfig && !hasDock) {
+    throw new Error(
+      `风格包 ${themeId} 未包含可应用的资源（壁纸 / translucenttb.json / nexus.reg|.wbk / nexus/）`,
     )
   }
 
-  // 导入任务栏样式（脚本内先备份现有 TranslucentTB 配置）
-  if (ttbConfig) {
-    await runScript('beautify', 'Import-TranslucentTBConfig.ps1', [
-      '-ConfigSource',
-      ttbConfig,
-      '-BackupDir',
-      getBackupDir(),
-    ])
+  const result: ApplyThemeResult = {
+    themeId,
+    wallpaper: { status: 'skipped', message: '风格包未包含壁纸' },
+    taskbar: { status: 'skipped', message: '风格包未包含任务栏配置' },
+    dock: { status: 'skipped', message: '风格包未包含 Dock 配置' },
   }
 
-  writeConfig({ currentThemeId: themeId })
+  // 壁纸（复用 wallpaper 模块脚本，脚本内先备份桌面注册表）
+  if (wallpaper) {
+    result.wallpaper = await runStep(() =>
+      runScript(
+        'wallpaper',
+        'Set-StaticWallpaper.ps1',
+        ['-Path', wallpaper, '-Style', 'fill', '-BackupDir', getBackupDir()],
+        60000,
+      ),
+    )
+  }
+
+  // 任务栏样式（脚本内先备份现有 TranslucentTB 配置）
+  if (ttbConfig) {
+    result.taskbar = await runStep(() =>
+      runScript('beautify', 'Import-TranslucentTBConfig.ps1', [
+        '-ConfigSource',
+        ttbConfig,
+        '-BackupDir',
+        getBackupDir(),
+      ]),
+    )
+  }
+
+  // Dock：联动 Nexus。顺序关键——先铺资源（注册表预设以绝对路径引用主题位图/图标/快捷方式，
+  // 必须先存在），再导入注册表配置（脚本内均先备份、可回滚）。
+  if (hasDock) {
+    result.dock = await applyDockStep(themeId)
+  }
+
+  const anyApplied = [result.wallpaper, result.taskbar, result.dock].some(
+    (s) => s.status === 'applied',
+  )
+  if (anyApplied) {
+    writeConfig({ currentThemeId: themeId })
+  }
+  return result
+}
+
+/**
+ * 应用 Dock 子项：先铺离线资源、再导入注册表配置（顺序关键，见 applyTheme 注释）。
+ *   - 资源与配置均无 → skipped；
+ *   - .wbk 走 DryRun（[DOCKS] 落点未上机验证）→ skipped，文案说明「已预演未写入」，避免误报已应用；
+ *   - 其余成功 → applied；任一步抛错 → failed（不向外冒泡，保证壁纸/任务栏子项继续）。
+ */
+async function applyDockStep(themeId: string): Promise<ThemeStepResult> {
+  try {
+    const deployed = await deployNexusResources(themeId)
+    const imported = await importNexusConfig(themeId)
+    if (!deployed && !imported) {
+      return { status: 'skipped', message: '风格包未包含 Dock 资源 / 配置' }
+    }
+    if (imported?.dryRun) {
+      return {
+        status: 'skipped',
+        message:
+          '检测到 .wbk 预设：[DOCKS] 落点尚未上机验证，已预演通过但未写入注册表（上机核对后去掉 DryRun 即生效）',
+      }
+    }
+    return { status: 'applied' }
+  } catch (err) {
+    return { status: 'failed', message: toErrorMessage(err) }
+  }
+}
+
+/** 执行单个风格包子项：成功→applied；抛错→failed（捕获错误信息，不向外冒泡，保证其余子项继续）。 */
+async function runStep(fn: () => Promise<unknown>): Promise<ThemeStepResult> {
+  try {
+    await fn()
+    return { status: 'applied' }
+  } catch (err) {
+    return { status: 'failed', message: toErrorMessage(err) }
+  }
 }
