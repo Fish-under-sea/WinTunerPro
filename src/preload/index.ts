@@ -34,6 +34,7 @@ const api: ElectronAPI = {
   listGpuTweakOptions: () => ipcRenderer.invoke(GPU_CHANNELS.LIST_TWEAK_OPTIONS),
   applyGpuTweaks: (optionIds) => ipcRenderer.invoke(GPU_CHANNELS.APPLY_TWEAKS, optionIds),
   applyNvidiaPreset: (presetId) => ipcRenderer.invoke(GPU_CHANNELS.APPLY_NVIDIA_PRESET, presetId),
+  getNvidiaProfileStatus: () => ipcRenderer.invoke(GPU_CHANNELS.GET_NVIDIA_PROFILE_STATUS),
 
   // oem
   detectOem: () => ipcRenderer.invoke(OEM_CHANNELS.DETECT),

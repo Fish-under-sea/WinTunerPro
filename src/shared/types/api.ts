@@ -7,6 +7,7 @@ import type {
   GpuTweakOption,
   GpuTweakOptionId,
   NvidiaPresetId,
+  NvidiaProfileStatus,
 } from './gpu'
 import type { OemDetectResult, OemApplyResult, OemPerformanceMode } from './oem'
 import type { PowerState } from './power'
@@ -66,6 +67,8 @@ export interface ElectronAPI {
   applyGpuTweaks: (optionIds: GpuTweakOptionId[]) => Promise<GpuTweakApplyResult>
   /** 应用 NVIDIA 基础预设（写操作） */
   applyNvidiaPreset: (presetId: NvidiaPresetId) => Promise<GpuApplyResult>
+  /** 只读查询 NVIDIA 控制面板竞技预设当前状态 */
+  getNvidiaProfileStatus: () => Promise<NvidiaProfileStatus>
 
   // ===== oem：机箱判定 + 品牌识别（只读） =====
   /** 检测机箱类型与 OEM 品牌 */

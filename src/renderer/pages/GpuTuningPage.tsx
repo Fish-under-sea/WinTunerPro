@@ -150,7 +150,7 @@ export function GpuTuningPage(): React.JSX.Element {
                           {item.available ? '支持' : '不支持'}
                         </Tag>
                       </div>
-                      <p className="mt-0.5 text-xs text-text-muted">{item.description}</p>
+                      <p className="mt-0.5 whitespace-pre-line text-xs text-text-muted">{item.description}</p>
                       <p className="mt-1 text-[11px] text-text-subtle">利弊/风险：{item.tradeoff}</p>
                       <p className="mt-1 text-[11px] text-text-subtle">可用性：{item.availabilityReason}</p>
                     </div>

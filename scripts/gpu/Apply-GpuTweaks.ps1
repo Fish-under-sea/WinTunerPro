@@ -5,6 +5,7 @@
 # - enable-hags：开启硬件加速 GPU 调度
 # - enable-game-mode：开启 Windows 游戏模式
 # - power-plan-performance：切换到现有性能向电源计划（不新建）
+# - nvidia-profile：NVIDIA 控制面板竞技预设（图像/OpenGL/电源/刷新率）
 
 param(
   [Parameter(Mandatory = $true)][string]$OptionIds
@@ -37,9 +38,41 @@ function Add-UniqueWarning {
   }
 }
 
+function Invoke-WtChildScript {
+  param(
+    [Parameter(Mandatory = $true)][string]$ScriptPath,
+    [string[]]$ScriptArgs = @()
+  )
+  if (-not (Test-Path $ScriptPath)) {
+    throw "子脚本不存在：$ScriptPath"
+  }
+  $prevOut = [Console]::Out
+  $capture = New-Object System.IO.StringWriter
+  [Console]::SetOut($capture)
+  try {
+    if ($ScriptArgs.Count -gt 0) {
+      & $ScriptPath @ScriptArgs
+    } else {
+      & $ScriptPath
+    }
+  } finally {
+    [Console]::SetOut($prevOut)
+  }
+  $text = $capture.ToString().Trim()
+  if ([string]::IsNullOrWhiteSpace($text)) {
+    throw '子脚本无 stdout 输出'
+  }
+  $envelope = $text | ConvertFrom-Json -ErrorAction Stop
+  if (-not $envelope.ok) {
+    $msg = [string]$envelope.error.message
+    throw "子脚本返回失败：$msg"
+  }
+  return $envelope.data
+}
+
 function Get-RequestedOptions {
   param([string]$Raw)
-  $all = @('nvidia-low-latency', 'enable-hags', 'enable-game-mode', 'power-plan-performance')
+  $all = @('nvidia-low-latency', 'enable-hags', 'enable-game-mode', 'power-plan-performance', 'nvidia-profile')
   $allow = @{}
   foreach ($id in $all) { $allow[$id] = $true }
 
@@ -172,6 +205,33 @@ Invoke-WtScript -ErrorCode 'E_GPU_TWEAK' -Body {
             break
           }
           Add-ItemResult -Bag $results -Id $id -Status 'success' -Reason "已切换到电源计划：$($target.name)"
+        }
+        'nvidia-profile' {
+          $profileScript = Join-Path $PSScriptRoot 'Set-NvidiaProfile.ps1'
+          if (-not (Test-Path $profileScript)) {
+            Add-ItemResult -Bag $results -Id $id -Status 'failed' `
+              -Reason 'Set-NvidiaProfile.ps1 不存在，请确认脚本已部署'
+            break
+          }
+          try {
+            $prObj = Invoke-WtChildScript -ScriptPath $profileScript
+            if ($prObj.success) {
+              $msg = [string]$prObj.message
+              foreach ($w in @($prObj.warnings)) {
+                Add-UniqueWarning -Warnings $warnings -Message ([string]$w)
+              }
+              if ($prObj.requiresDriverRestart) {
+                Add-UniqueWarning -Warnings $warnings -Message '电源管理模式变更需重启驱动（或重启系统）后完全生效'
+              }
+              Add-ItemResult -Bag $results -Id $id -Status 'success' -Reason $msg
+            } else {
+              $skips = @($prObj.skippedItems) -join '；'
+              Add-ItemResult -Bag $results -Id $id -Status 'failed' -Reason "部分项跳过：$skips"
+            }
+          } catch {
+            Add-ItemResult -Bag $results -Id $id -Status 'failed' `
+              -Reason "调用 Set-NvidiaProfile.ps1 失败：$($_.Exception.Message)"
+          }
         }
       }
     } catch {

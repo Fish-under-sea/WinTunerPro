@@ -8,6 +8,7 @@ import type {
   GpuInfo,
   GpuVendor,
   NvidiaPresetId,
+  NvidiaProfileStatus,
 } from '@shared/types/gpu'
 import { buildGpuTweakCatalog } from '@shared/types/gpu'
 import { runPowerShell, asArray } from './powershellRunner'
@@ -139,7 +140,44 @@ const GPU_TWEAK_WHITELIST: readonly GpuTweakOptionId[] = [
   'enable-hags',
   'enable-game-mode',
   'power-plan-performance',
+  'nvidia-profile',
 ]
+
+interface RawNvidiaProfileStatus {
+  imageSettingsMode?: unknown
+  imageSettingsValue?: unknown
+  openGLGpu?: unknown
+  powerMizerLevel?: unknown
+  preferredRefreshRate?: unknown
+  targetImageMode?: unknown
+  targetImageValue?: unknown
+  targetPowerLevel?: unknown
+  targetRefreshRate?: unknown
+}
+
+function normalizeNvidiaProfileStatus(raw: RawNvidiaProfileStatus): NvidiaProfileStatus {
+  return {
+    imageSettingsMode: Number(raw.imageSettingsMode ?? -1),
+    imageSettingsValue: Number(raw.imageSettingsValue ?? -1),
+    openGLGpu: String(raw.openGLGpu ?? ''),
+    powerMizerLevel: Number(raw.powerMizerLevel ?? -1),
+    preferredRefreshRate: Number(raw.preferredRefreshRate ?? -1),
+    targetImageMode: Number(raw.targetImageMode ?? 2),
+    targetImageValue: Number(raw.targetImageValue ?? 0),
+    targetPowerLevel: Number(raw.targetPowerLevel ?? 1),
+    targetRefreshRate: Number(raw.targetRefreshRate ?? 1),
+  }
+}
+
+/** 只读查询 NVIDIA 控制面板竞技预设当前状态 */
+export async function getNvidiaProfileStatus(): Promise<NvidiaProfileStatus> {
+  const detect = await detectGpu()
+  if (detect.primaryVendor !== 'NVIDIA') {
+    throw new Error('仅 NVIDIA 主显卡支持查询控制面板预设状态')
+  }
+  const raw = await runPowerShell<RawNvidiaProfileStatus>('gpu/Get-NvidiaProfileStatus.ps1')
+  return normalizeNvidiaProfileStatus(raw)
+}
 
 function normalizeTweakResult(raw: RawGpuBatchItemResult): GpuTweakExecutionResult {
   const id = String(raw.id ?? '') as GpuTweakOptionId

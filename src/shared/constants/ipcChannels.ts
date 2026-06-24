@@ -33,6 +33,8 @@ export const GPU_CHANNELS = {
   APPLY_TWEAKS: 'gpu:apply-tweaks',
   /** 应用 NVIDIA 预设 */
   APPLY_NVIDIA_PRESET: 'gpu:apply-nvidia-preset',
+  /** 只读查询 NVIDIA 控制面板竞技预设当前状态 */
+  GET_NVIDIA_PROFILE_STATUS: 'gpu:get-nvidia-profile-status',
 } as const
 
 /** oem 模块通道——机箱判定与品牌识别（只读） */

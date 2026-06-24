@@ -57,6 +57,20 @@ export type GpuTweakOptionId =
   | 'enable-hags'
   | 'enable-game-mode'
   | 'power-plan-performance'
+  | 'nvidia-profile'
+
+/** NVIDIA 控制面板竞技预设当前状态（`gpu:get-nvidia-profile-status` 只读查询） */
+export interface NvidiaProfileStatus {
+  imageSettingsMode: number
+  imageSettingsValue: number
+  openGLGpu: string
+  powerMizerLevel: number
+  preferredRefreshRate: number
+  targetImageMode: number
+  targetImageValue: number
+  targetPowerLevel: number
+  targetRefreshRate: number
+}
 
 /** 单个调优选项定义 */
 export interface GpuTweakOption {
@@ -118,6 +132,20 @@ export function buildGpuTweakCatalog(primaryVendor: GpuVendor): GpuTweakOption[]
       tradeoff: '功耗与温度上升，续航降低。',
       available: true,
       availabilityReason: '基于本机已有电源计划执行，不新建计划。',
+    },
+    {
+      id: 'nvidia-profile',
+      name: 'NVIDIA 控制面板竞技预设',
+      description:
+        '写入图像设置（性能优先）、OpenGL 渲染 GPU（独立显卡）、电源管理模式（最高性能）、首选刷新率（最高可用）四项设置。\n' +
+        '· 图像设置 → 使用我的优先选择（性能端）\n' +
+        '· OpenGL 渲染 GPU → 独立显卡\n' +
+        '· 电源管理模式 → 最高性能优先\n' +
+        '· 首选刷新率 → 最高可用',
+      tradeoff:
+        '电源管理模式变更需驱动重启后完全生效；OpenGL GPU 绑定依赖独显 PNP ID，核显设备跳过该子项。',
+      available: isNvidia,
+      availabilityReason: isNvidia ? '已检测到 NVIDIA 主显卡，可执行。' : '仅 NVIDIA 主显卡支持。',
     },
   ]
 }
