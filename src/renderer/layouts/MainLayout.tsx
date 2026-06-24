@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { NAV_ITEMS } from '@renderer/navConfig'
@@ -5,6 +6,7 @@ import { Icon } from '@renderer/components/icons'
 import { Toaster } from '@renderer/components/ui'
 import { cn } from '@renderer/lib/cn'
 import { pageVariants } from '@renderer/lib/motion'
+import { useAppInfoStore } from '@renderer/store/settingsStore'
 
 /**
  * 主布局：左侧固定导航栏（分组） + 右侧路由内容区。
@@ -12,6 +14,13 @@ import { pageVariants } from '@renderer/lib/motion'
  */
 export function MainLayout(): React.JSX.Element {
   const location = useLocation()
+
+  // 左下角版本号取自主进程 app.getVersion()，避免写死与 package.json 脱节
+  const appVersion = useAppInfoStore((s) => s.data?.version)
+  const loadAppInfo = useAppInfoStore((s) => s.load)
+  useEffect(() => {
+    void loadAppInfo()
+  }, [loadAppInfo])
 
   // 按 group 归并导航项，保持 navConfig 中的出现顺序
   const groups: { group: string; items: typeof NAV_ITEMS }[] = []
@@ -79,7 +88,7 @@ export function MainLayout(): React.JSX.Element {
         </nav>
 
         <footer className="flex items-center justify-between border-t border-border px-5 py-3 text-xs text-text-subtle">
-          <span>v0.1.0</span>
+          <span>{appVersion ? `v${appVersion}` : ''}</span>
           <span className="inline-flex items-center gap-1.5">
             <span className="h-1.5 w-1.5 rounded-full bg-success" />
             开发中

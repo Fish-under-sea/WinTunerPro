@@ -24,12 +24,11 @@ win:
     - nsis
   # 关键：应用以管理员权限运行（启动弹 UAC），承载系统级 PowerShell 调度
   requestedExecutionLevel: requireAdministrator
-  # 图标占位，设计代理补齐 build/icon.ico 后启用
-  # icon: build/icon.ico
+  icon: build/icon.ico
 
 nsis:
   oneClick: false
   perMachine: true
   allowToChangeInstallationDirectory: true
-  # installerIcon: build/icon.ico
-  # uninstallerIcon: build/icon.ico
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
